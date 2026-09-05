@@ -1,6 +1,7 @@
 import { faceIndexForValue, labelForFace, shapeForSides } from "./dice-shapes.js?v=1.3.1";
 import { createMotionPaths, motionPosition } from "./dice-motion.js?v=1.3.2";
-import { drawRollEffect, labelPalette, materialById, paintFace } from "./dice-materials.js?v=1.4.0";
+import { labelPalette, materialById, paintFace } from "./dice-materials.js?v=1.4.1";
+import { createDiceParticleSystem } from "./dice-particles.js?v=1.4.1";
 
 export function createDiceTray(canvas) {
   const ctx = canvas.getContext("2d", { alpha: true });
@@ -9,6 +10,7 @@ export function createDiceTray(canvas) {
   let running = false;
   let appearance = materialById("amber");
   const motionReduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const particles = createDiceParticleSystem(canvas.parentElement?.querySelector("#diceEffectsCanvas"));
 
   function resize() {
     const rect = canvas.getBoundingClientRect();
@@ -16,6 +18,7 @@ export function createDiceTray(canvas) {
     canvas.width = Math.max(1, Math.round(rect.width * ratio));
     canvas.height = Math.max(1, Math.round(rect.height * ratio));
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    particles.resize(rect.width, rect.height);
     draw(performance.now());
   }
 
@@ -30,7 +33,7 @@ export function createDiceTray(canvas) {
       const resultFace = faceIndexForValue(resolved.shape, result.sides, result.value);
       return {
         sides: Number(result.sides), shape: resolved.shape, value: result.value, resultFace,
-        material: appearance, size: maxSize, trail: [], effects: !motionReduced,
+        material: appearance, size: maxSize,
         motion: motionPaths[index],
         startRotation: quaternionFromEuler(Math.random()*6, Math.random()*6, Math.random()*6),
         endRotation: resultRotation(resolved.shape, resultFace, index),
@@ -38,6 +41,7 @@ export function createDiceTray(canvas) {
         sign: result.sign || 1, used: options.usedResults?.includes(result) ?? true
       };
     });
+    particles.begin(appearance.effect, total, maxSize);
     running = true;
     const started = performance.now();
     const animate = now => {
@@ -46,6 +50,7 @@ export function createDiceTray(canvas) {
       if (!done) frame = requestAnimationFrame(animate);
       else {
         running = false;
+        particles.finish();
         draw(now, started);
         options.onDone?.();
       }
@@ -57,12 +62,18 @@ export function createDiceTray(canvas) {
   function draw(now = performance.now(), started = now - 9999) {
     const rect = canvas.getBoundingClientRect();
     ctx.clearRect(0, 0, rect.width, rect.height);
-    dice.forEach((die, index) => drawDie(die, progress(die, now, started), ctx, index, now - started >= die.delay));
+    dice.forEach((die, index) => {
+      const amount = progress(die, now, started);
+      const active = now - started >= die.delay;
+      const position = drawDie(die, amount, ctx, index);
+      particles.track(index, position, amount, active);
+    });
   }
 
   function destroy() {
     cancelAnimationFrame(frame);
     resizeObserver.disconnect();
+    particles.destroy();
   }
 
   function setAppearance(materialId) {
@@ -76,7 +87,7 @@ export function createDiceTray(canvas) {
   return { roll, resize, destroy, setAppearance, get running() { return running; } };
 }
 
-function drawDie(die, t, ctx, index, active) {
+function drawDie(die, t, ctx, index) {
   const position = motionPosition(die.motion, t);
   const x = position.x;
   const y = position.y;
@@ -91,11 +102,6 @@ function drawDie(die, t, ctx, index, active) {
     return { vertices, center, centerZ: center[2], faceIndex };
   }).filter(face => face.centerZ > -.04).sort((a, b) => a.centerZ - b.centerZ);
   const scale = die.size * (.78 + .22 * easeOut(t));
-  if (active && t < .99) {
-    die.trail.push(position);
-    if (die.trail.length > 12) die.trail.shift();
-  }
-  drawRollEffect(ctx, die.material, die, position, t, performance.now(), active);
   ctx.save();
   ctx.translate(x, y);
   ctx.globalAlpha = die.used ? 1 : .36;
@@ -119,6 +125,7 @@ function drawDie(die, t, ctx, index, active) {
   });
   if (t > .22) faces.forEach(face => drawFaceLabel(ctx, die, face, scale, t));
   ctx.restore();
+  return position;
 }
 
 function drawFaceLabel(ctx, die, face, scale, t) {

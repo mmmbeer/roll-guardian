@@ -43,15 +43,6 @@ export function paintFace(ctx, material, polygon, light, seed, now) {
   ctx.restore();
 }
 
-export function drawRollEffect(ctx, material, die, position, progress, now, active) {
-  if (!active || !die.effects || !material.effect || progress >= .985) return;
-  if (material.effect === "comet") return drawTrail(ctx, die.trail, "116,172,255");
-  if (material.effect === "lightning") return drawLightning(ctx, position, die, now);
-  if (material.effect === "shimmer") return drawShimmer(ctx, position, die, now);
-  if (material.effect === "glyphs") return drawGlyphs(ctx, position, die, now);
-  drawParticles(ctx, material.effect, position, die, now);
-}
-
 export function labelPalette(material) {
   const value = parseInt(material.ink.slice(1), 16);
   const luminance = (value >> 16) * .299 + (value >> 8 & 255) * .587 + (value & 255) * .114;
@@ -107,60 +98,6 @@ function drawPattern(ctx, pattern, bounds, seed, now) {
   if (pattern === "marble") return veins(ctx, bounds, random);
   if (pattern === "verdigris") return dots(ctx, bounds, random, 13, "rgba(190,128,55,.35)", 5);
   if (pattern === "runes") return runes(ctx, bounds, random);
-}
-
-function drawTrail(ctx, trail, color) {
-  if (trail.length < 2) return;
-  ctx.save(); ctx.lineCap = "round";
-  for (let index = 1; index < trail.length; index += 1) {
-    ctx.beginPath(); ctx.moveTo(trail[index - 1].x, trail[index - 1].y); ctx.lineTo(trail[index].x, trail[index].y);
-    ctx.strokeStyle = `rgba(${color},${index / trail.length * .34})`; ctx.lineWidth = index / trail.length * 9; ctx.stroke();
-  }
-  ctx.restore();
-}
-
-function drawParticles(ctx, effect, position, die, now) {
-  const colors = effect === "embers" ? ["#ffcb69", "#ff6b31"] : effect === "snow" ? ["#efffff", "#9edcea"] : ["#ffe6a1", "#d8b5ff"];
-  ctx.save();
-  for (let index = 0; index < 11; index += 1) {
-    const phase = now / (effect === "embers" ? 230 : 360) + index * 1.73 + die.sides;
-    const radius = die.size * (.45 + index % 4 * .16);
-    const x = position.x + Math.cos(phase * (index % 2 ? 1 : -1)) * radius;
-    const rise = effect === "embers" ? -((now / 9 + index * 17) % 48) : Math.sin(phase * .7) * 14;
-    const y = position.y + Math.sin(phase * 1.31) * radius * .45 + rise;
-    ctx.globalAlpha = .18 + (index % 4) * .12; ctx.fillStyle = colors[index % colors.length];
-    ctx.beginPath(); ctx.arc(x, y, 1.2 + index % 3, 0, Math.PI * 2); ctx.fill();
-  }
-  ctx.restore();
-}
-
-function drawLightning(ctx, position, die, now) {
-  ctx.save(); ctx.strokeStyle = `rgba(186,225,255,${.48 + Math.sin(now / 55) * .22})`; ctx.lineWidth = 1.6;
-  for (let branch = 0; branch < 3; branch += 1) {
-    ctx.beginPath(); ctx.moveTo(position.x, position.y);
-    for (let step = 1; step <= 4; step += 1) {
-      const angle = branch * 2.1 + step * .23 + now / 420;
-      ctx.lineTo(position.x + Math.cos(angle) * die.size * step / 4, position.y + Math.sin(angle) * die.size * step / 4);
-    }
-    ctx.stroke();
-  }
-  ctx.restore();
-}
-
-function drawShimmer(ctx, position, die, now) {
-  const pulse = .5 + Math.sin(now / 90) * .5;
-  ctx.save(); ctx.strokeStyle = `rgba(167,255,202,${.12 + pulse * .28})`; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.arc(position.x, position.y, die.size * (.65 + pulse * .18), 0, Math.PI * 2); ctx.stroke(); ctx.restore();
-}
-
-function drawGlyphs(ctx, position, die, now) {
-  ctx.save(); ctx.strokeStyle = "rgba(255,220,139,.7)"; ctx.lineWidth = 1.4;
-  for (let index = 0; index < 5; index += 1) {
-    const angle = now / 430 + index * Math.PI * .4;
-    const x = position.x + Math.cos(angle) * die.size * .78, y = position.y + Math.sin(angle) * die.size * .42;
-    ctx.beginPath(); ctx.moveTo(x - 3, y + 4); ctx.lineTo(x, y - 5); ctx.lineTo(x + 3, y + 4); ctx.moveTo(x - 2, y); ctx.lineTo(x + 2, y); ctx.stroke();
-  }
-  ctx.restore();
 }
 
 function scales(ctx, bounds) {

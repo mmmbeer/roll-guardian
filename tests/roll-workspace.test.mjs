@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { buildRollPlan } from "../dist/js/roll-engine.js";
 import { createDefaultState } from "../dist/js/state.js";
 import { appearanceMarkup, DICE_MATERIALS, materialById } from "../dist/js/dice-materials.js";
+import { PARTICLE_PROFILES, particleProfile } from "../dist/js/dice-particles.js";
 import { renderDiceLoadout, renderModifierPopover, renderRollSubrail, rollFamily } from "../dist/js/ui.js";
 
 test("weapon contexts share one bottom-rail family", () => {
@@ -102,4 +103,15 @@ test("dice appearance picker identifies selections and roll effects", () => {
   assert.match(markup, /data-dice-material="stormglass"[^>]*aria-pressed="true"/);
   assert.match(markup, /Roll effect · lightning arcs/);
   assert.match(markup, /reduced-motion/);
+});
+
+test("each animated material uses a configured Proton emitter profile", () => {
+  const effects = DICE_MATERIALS.map(material => material.effect).filter(Boolean);
+  assert.deepEqual(effects.sort(), Object.keys(PARTICLE_PROFILES).sort());
+  effects.forEach(effect => {
+    const profile = particleProfile(effect);
+    assert.ok(profile.life[0] > 0);
+    assert.ok(profile.rate[1] <= 4);
+    assert.ok(profile.stopAt < .9);
+  });
 });

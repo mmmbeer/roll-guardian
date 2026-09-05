@@ -1,6 +1,6 @@
 # What Do I Roll?
 
-A dependency-free, mobile-first 5E dice assistant built with HTML, CSS, and JavaScript.
+A self-contained, mobile-first 5E dice assistant built with HTML, CSS, and JavaScript.
 
 The roll view is organized as a full-viewport dice platform. Modifier groups and global search sit in the top rail, applicable modifiers appear directly below it, and context plus weapon, spell, skill, or save choices stay in two compact bottom rails.
 
@@ -18,7 +18,7 @@ The roll view is organized as a full-viewport dice platform. Modifier groups and
 - Client-side D&D Beyond PDF and JSON character import
 - Local character storage, backup export/import, and roll history
 - Canvas-rendered 3D polyhedral dice whose final faces drive the calculated result
-- Eight solid dice colors and ten procedural materials, including reduced-motion-aware roll effects
+- Eight solid dice colors and ten procedural materials with Proton-powered, reduced-motion-aware roll effects
 
 ## Run locally
 
@@ -29,6 +29,8 @@ npm run dev
 ```
 
 No application build step is required.
+
+The Proton particle engine is vendored with the application, so dice effects do not require CDN access or runtime network requests.
 
 ## Cloudflare Pages
 
@@ -61,6 +63,8 @@ npm test
 ```
 
 The detailed modifier coverage matrix and audit boundary are in [`docs/modifier-audit.md`](docs/modifier-audit.md).
+
+Third-party software notices are in [`docs/third-party-notices.md`](docs/third-party-notices.md).
 
 ## Character imports
 
