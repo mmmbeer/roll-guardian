@@ -1,4 +1,5 @@
 import { faceIndexForValue, labelForFace, shapeForSides } from "./dice-shapes.js?v=1.3.1";
+import { createMotionPaths, motionPosition } from "./dice-motion.js?v=1.3.2";
 
 export function createDiceTray(canvas) {
   const ctx = canvas.getContext("2d", { alpha: true });
@@ -21,18 +22,17 @@ export function createDiceTray(canvas) {
     const rect = canvas.getBoundingClientRect();
     const total = results.length;
     const maxSize = total <= 2 ? 72 : total <= 5 ? 56 : 44;
+    const motionPaths = createMotionPaths(total, rect.width, rect.height, maxSize);
     dice = results.map((result, index) => {
-      const grid = layout(index, total, rect.width, rect.height);
       const resolved = shapeForSides(result.sides);
       const resultFace = faceIndexForValue(resolved.shape, result.sides, result.value);
       return {
         sides: Number(result.sides), shape: resolved.shape, value: result.value, resultFace,
         color: colorFor(result.sides, index), size: maxSize,
-        startX: rect.width * (.18 + Math.random() * .64), startY: -70 - Math.random() * 80,
-        x: grid.x, y: grid.y,
+        motion: motionPaths[index],
         startRotation: quaternionFromEuler(Math.random()*6, Math.random()*6, Math.random()*6),
         endRotation: resultRotation(resolved.shape, resultFace, index),
-        delay: index * 48, duration: motionReduced ? 40 : 850 + Math.random() * 330,
+        delay: index * 42, duration: motionReduced ? 40 : 1250 + Math.random() * 420,
         sign: result.sign || 1, used: options.usedResults?.includes(result) ?? true
       };
     });
@@ -69,10 +69,10 @@ export function createDiceTray(canvas) {
 }
 
 function drawDie(die, t, ctx, index) {
-  const bounce = Math.abs(Math.sin(t * Math.PI * 3.1)) * (1 - t) * 45;
-  const x = mix(die.startX, die.x, easeOut(t));
-  const y = mix(die.startY, die.y, easeOut(t)) - bounce;
-  const turns = 9 * (1 - t);
+  const position = motionPosition(die.motion, t);
+  const x = position.x;
+  const y = position.y;
+  const turns = die.motion.spin * (1 - t);
   const settled = slerp(die.startRotation, die.endRotation, easeOut(t));
   const spin = quaternionFromEuler(turns*.52, turns*.73, turns*.39);
   const rotation = normalizeQuaternion(multiplyQuaternion(spin, settled));
@@ -131,19 +131,6 @@ function drawFaceLabel(ctx, die, face, scale, t) {
   ctx.strokeText(label, center[0], center[1] + 1);
   ctx.fillText(label, center[0], center[1] + 1);
   ctx.shadowBlur = 0;
-}
-
-function layout(index, total, width, height) {
-  const cols = total <= 2 ? total : Math.min(4, Math.ceil(Math.sqrt(total)));
-  const rows = Math.ceil(total / cols);
-  const col = index % cols;
-  const row = Math.floor(index / cols);
-  const usableWidth = Math.min(width - 60, cols * 110);
-  const usableHeight = Math.min(height - 80, rows * 104);
-  return {
-    x: width / 2 - usableWidth / 2 + usableWidth * (col + .5) / cols,
-    y: height / 2 - usableHeight / 2 + usableHeight * (row + .5) / rows + 8
-  };
 }
 
 function project([x,y,z], scale) {

@@ -3,6 +3,7 @@ import test from "node:test";
 import { importCharacterJson } from "../dist/js/importer.js";
 import { characterFeatureEffects } from "../dist/js/character-features.js";
 import { DICE_SHAPES, faceIndexForValue, labelForFace } from "../dist/js/dice-shapes.js";
+import { createMotionPaths, motionPosition } from "../dist/js/dice-motion.js";
 import { buildRollPlan, executeRoll, parseNotation, rollDie } from "../dist/js/roll-engine.js";
 import { EFFECT_PRESETS } from "../dist/js/rules-data.js";
 import { availableSpells, spellDamage, spellsForRuleset } from "../dist/js/spell-data.js";
@@ -79,6 +80,26 @@ test("uses the correct numbered polyhedron for each standard die", () => {
       assert.equal(labelForFace(shape, sides, faceIndex, value, faceIndex), String(value));
     }
   }
+});
+
+test("spreads dice across the stage and rebounds them from frame edges", () => {
+  let seed = 127;
+  const random = () => ((seed = seed * 16807 % 2147483647) - 1) / 2147483646;
+  const paths = createMotionPaths(10, 1000, 700, 44, random);
+  const landingXs = paths.map(path => path.landing.x);
+  const landingYs = paths.map(path => path.landing.y);
+  assert.ok(Math.max(...landingXs) - Math.min(...landingXs) > 500);
+  assert.ok(Math.max(...landingYs) - Math.min(...landingYs) > 180);
+  paths.forEach(path => {
+    assert.ok(path.collisionEdges.length >= 2);
+    path.points.slice(1, -1).forEach((point, index) => {
+      const edge = path.collisionEdges[index];
+      const onEdge = edge === 0 && point.y === path.bounds.top || edge === 1 && point.x === path.bounds.right ||
+        edge === 2 && point.y === path.bounds.bottom || edge === 3 && point.x === path.bounds.left;
+      assert.equal(onEdge, true);
+    });
+    assert.deepEqual(motionPosition(path, 1), path.landing);
+  });
 });
 
 test("imports common D&D Beyond JSON structures", () => {

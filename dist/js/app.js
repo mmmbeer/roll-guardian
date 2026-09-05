@@ -1,4 +1,4 @@
-import { createDiceTray, playDiceSound } from "./dice-3d.js?v=1.3.1";
+import { createDiceTray, playDiceSound } from "./dice-3d.js?v=1.3.2";
 import { importCharacterFile } from "./importer.js?v=1.3.0";
 import { buildRollPlan, effectCatalog, executeRoll, rerollOutcome } from "./roll-engine.js?v=1.3.0";
 import { DAMAGE_TYPES } from "./rules-data.js?v=1.3.0";
