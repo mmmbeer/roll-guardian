@@ -1,23 +1,4 @@
-const PHI = (1 + Math.sqrt(5)) / 2;
-
-const SHAPES = {
-  4: {
-    vertices: [[1,1,1],[-1,-1,1],[-1,1,-1],[1,-1,-1]],
-    faces: [[0,1,2],[0,3,1],[0,2,3],[1,3,2]]
-  },
-  6: {
-    vertices: [[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]],
-    faces: [[0,3,2,1],[4,5,6,7],[0,1,5,4],[3,7,6,2],[1,2,6,5],[0,4,7,3]]
-  },
-  8: {
-    vertices: [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]],
-    faces: [[0,2,4],[2,1,4],[1,3,4],[3,0,4],[2,0,5],[1,2,5],[3,1,5],[0,3,5]]
-  },
-  10: makeBipyramid(5),
-  12: makeIcosahedron(),
-  20: makeIcosahedron(),
-  100: makeBipyramid(5)
-};
+import { faceIndexForValue, labelForFace, shapeForSides } from "./dice-shapes.js?v=1.3.1";
 
 export function createDiceTray(canvas) {
   const ctx = canvas.getContext("2d", { alpha: true });
@@ -42,13 +23,15 @@ export function createDiceTray(canvas) {
     const maxSize = total <= 2 ? 72 : total <= 5 ? 56 : 44;
     dice = results.map((result, index) => {
       const grid = layout(index, total, rect.width, rect.height);
+      const resolved = shapeForSides(result.sides);
+      const resultFace = faceIndexForValue(resolved.shape, result.sides, result.value);
       return {
-        sides: supportedSides(result.sides), value: result.value,
+        sides: Number(result.sides), shape: resolved.shape, value: result.value, resultFace,
         color: colorFor(result.sides, index), size: maxSize,
         startX: rect.width * (.18 + Math.random() * .64), startY: -70 - Math.random() * 80,
         x: grid.x, y: grid.y,
-        startRot: [Math.random()*6, Math.random()*6, Math.random()*6],
-        endRot: [Math.random()*3+.3, Math.random()*3+.4, Math.random()*3+.2],
+        startRotation: quaternionFromEuler(Math.random()*6, Math.random()*6, Math.random()*6),
+        endRotation: resultRotation(resolved.shape, resultFace, index),
         delay: index * 48, duration: motionReduced ? 40 : 850 + Math.random() * 330,
         sign: result.sign || 1, used: options.usedResults?.includes(result) ?? true
       };
@@ -90,14 +73,15 @@ function drawDie(die, t, ctx, index) {
   const x = mix(die.startX, die.x, easeOut(t));
   const y = mix(die.startY, die.y, easeOut(t)) - bounce;
   const turns = 9 * (1 - t);
-  const rotation = die.startRot.map((value, i) => mix(value + turns * (i + 1) * .45, die.endRot[i], easeOut(t)));
-  const shape = SHAPES[die.sides] || SHAPES[20];
-  const points = shape.vertices.map(vertex => rotate(vertex, rotation));
-  const faces = shape.faces.map(face => {
+  const settled = slerp(die.startRotation, die.endRotation, easeOut(t));
+  const spin = quaternionFromEuler(turns*.52, turns*.73, turns*.39);
+  const rotation = normalizeQuaternion(multiplyQuaternion(spin, settled));
+  const points = die.shape.vertices.map(vertex => rotateByQuaternion(vertex, rotation));
+  const faces = die.shape.faces.map((face, faceIndex) => {
     const vertices = face.map(i => points[i]);
-    const centerZ = vertices.reduce((sum, vertex) => sum + vertex[2], 0) / vertices.length;
-    return { vertices, centerZ };
-  }).sort((a, b) => a.centerZ - b.centerZ);
+    const center = average(vertices);
+    return { vertices, center, centerZ: center[2], faceIndex };
+  }).filter(face => face.centerZ > -.04).sort((a, b) => a.centerZ - b.centerZ);
   const scale = die.size * (.78 + .22 * easeOut(t));
   ctx.save();
   ctx.translate(x, y);
@@ -105,42 +89,48 @@ function drawDie(die, t, ctx, index) {
   ctx.shadowColor = "rgba(0,0,0,.35)";
   ctx.shadowBlur = 12;
   ctx.shadowOffsetY = 7;
-  faces.forEach((face, faceIndex) => {
-    const normal = faceNormal(face.vertices);
-    const light = clamp(.34 + Math.max(0, normal[0]*-.35 + normal[1]*-.55 + normal[2]*.8) * .7, .22, 1);
+  faces.forEach(face => {
+    const normal = normalize(face.center);
+    const light = clamp(.32 + Math.max(0, normal[0]*-.35 + normal[1]*-.55 + normal[2]*.8) * .72, .2, 1);
     ctx.beginPath();
     face.vertices.forEach((point, i) => {
       const p = project(point, scale);
       if (i) ctx.lineTo(p[0], p[1]); else ctx.moveTo(p[0], p[1]);
     });
     ctx.closePath();
-    ctx.fillStyle = shade(die.color, light + faceIndex * .006);
+    ctx.fillStyle = shade(die.color, light);
     ctx.fill();
     ctx.shadowColor = "transparent";
-    ctx.strokeStyle = "rgba(255,255,255,.28)";
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = face.faceIndex === die.resultFace && t > .78 ? "rgba(255,213,116,.9)" : "rgba(255,255,255,.32)";
+    ctx.lineWidth = face.faceIndex === die.resultFace && t > .78 ? 2 : 1;
     ctx.stroke();
   });
-  if (t > .72) drawValue(ctx, die, t, index);
+  if (t > .22) faces.forEach(face => drawFaceLabel(ctx, die, face, scale, t));
   ctx.restore();
 }
 
-function drawValue(ctx, die, t) {
-  const alpha = clamp((t - .72) / .18, 0, 1);
-  const label = die.sides === 100 && die.value !== 100 ? String(die.value).padStart(2, "0") : String(die.value);
-  ctx.globalAlpha = alpha * (die.used ? 1 : .55);
-  ctx.shadowColor = "rgba(0,0,0,.7)";
-  ctx.shadowBlur = 8;
-  ctx.fillStyle = "rgba(8,13,19,.78)";
-  ctx.beginPath();
-  ctx.arc(0, 0, Math.max(18, die.size * .34), 0, Math.PI * 2);
-  ctx.fill();
-  ctx.shadowBlur = 0;
+function drawFaceLabel(ctx, die, face, scale, t) {
+  const projected = face.vertices.map(point => project(point, scale));
+  const center = average(projected);
+  const area = polygonArea(projected);
+  if (area < 55) return;
+  const frontness = clamp((face.centerZ + .15) / 1.2, .12, 1);
+  const alpha = clamp((t - .22) / .2, 0, 1) * (die.used ? 1 : .48) * clamp(frontness*1.5, .3, 1);
+  const label = labelForFace(die.shape, die.sides, face.faceIndex, die.value, die.resultFace);
+  const fontSize = clamp(Math.sqrt(area) * .31, 9, die.size * .34);
+  ctx.globalAlpha = alpha;
+  ctx.shadowColor = "rgba(0,0,0,.55)";
+  ctx.shadowBlur = 3;
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = "rgba(7,12,18,.72)";
+  ctx.lineWidth = Math.max(2, fontSize * .15);
   ctx.fillStyle = "#fff7e6";
-  ctx.font = `800 ${Math.max(16, die.size * .34)}px ui-monospace, monospace`;
+  ctx.font = `800 ${fontSize}px ui-monospace, SFMono-Regular, Menlo, monospace`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(label, 0, 1);
+  ctx.strokeText(label, center[0], center[1] + 1);
+  ctx.fillText(label, center[0], center[1] + 1);
+  ctx.shadowBlur = 0;
 }
 
 function layout(index, total, width, height) {
@@ -156,54 +146,72 @@ function layout(index, total, width, height) {
   };
 }
 
-function makeBipyramid(half) {
-  const vertices = [[0,-1.2,0],[0,1.2,0]];
-  for (let i = 0; i < half * 2; i += 1) {
-    const angle = i * Math.PI / half;
-    vertices.push([Math.cos(angle), 0, Math.sin(angle)]);
-  }
-  const faces = [];
-  for (let i = 0; i < half * 2; i += 1) {
-    const next = 2 + ((i + 1) % (half * 2));
-    faces.push([0, 2 + i, next], [1, next, 2 + i]);
-  }
-  return { vertices, faces };
-}
-
-function makeIcosahedron() {
-  const vertices = [
-    [-1,PHI,0],[1,PHI,0],[-1,-PHI,0],[1,-PHI,0],
-    [0,-1,PHI],[0,1,PHI],[0,-1,-PHI],[0,1,-PHI],
-    [PHI,0,-1],[PHI,0,1],[-PHI,0,-1],[-PHI,0,1]
-  ];
-  const faces = [
-    [0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],
-    [1,5,9],[5,11,4],[11,10,2],[10,7,6],[7,1,8],
-    [3,9,4],[3,4,2],[3,2,6],[3,6,8],[3,8,9],
-    [4,9,5],[2,4,11],[6,2,10],[8,6,7],[9,8,1]
-  ];
-  return { vertices, faces };
-}
-
-function rotate([x,y,z], [rx,ry,rz]) {
-  let ny = y*Math.cos(rx)-z*Math.sin(rx), nz = y*Math.sin(rx)+z*Math.cos(rx); y=ny; z=nz;
-  let nx = x*Math.cos(ry)+z*Math.sin(ry); nz = -x*Math.sin(ry)+z*Math.cos(ry); x=nx; z=nz;
-  nx = x*Math.cos(rz)-y*Math.sin(rz); ny = x*Math.sin(rz)+y*Math.cos(rz);
-  return [nx,ny,z];
-}
-
 function project([x,y,z], scale) {
   const perspective = 3.8 / (4.8 - z);
   return [x * scale * perspective, y * scale * perspective];
 }
 
-function faceNormal(vertices) {
-  const a = vertices[0], b = vertices[1], c = vertices[2];
-  const u = [b[0]-a[0], b[1]-a[1], b[2]-a[2]];
-  const v = [c[0]-a[0], c[1]-a[1], c[2]-a[2]];
-  const n = [u[1]*v[2]-u[2]*v[1], u[2]*v[0]-u[0]*v[2], u[0]*v[1]-u[1]*v[0]];
-  const length = Math.hypot(...n) || 1;
-  return n.map(value => value / length);
+function resultRotation(shape, faceIndex, index) {
+  const face = shape.faces[faceIndex];
+  const direction = normalize(average(face.map(vertexIndex => shape.vertices[vertexIndex])));
+  const target = normalize([index % 2 ? .1 : -.1, -.13, 1]);
+  const align = quaternionFromTo(direction, target);
+  const twist = quaternionFromAxisAngle(target, ((index * 1.71) % 1 - .5) * .7);
+  return normalizeQuaternion(multiplyQuaternion(twist, align));
+}
+
+function quaternionFromTo(from, to) {
+  let w = 1 + dot(from, to);
+  let xyz;
+  if (w < .000001) {
+    xyz = Math.abs(from[0]) > Math.abs(from[2]) ? [-from[1], from[0], 0] : [0, -from[2], from[1]];
+    w = 0;
+  } else xyz = cross(from, to);
+  return normalizeQuaternion([...xyz, w]);
+}
+
+function quaternionFromAxisAngle(axis, angle) {
+  const half = angle / 2;
+  const sine = Math.sin(half);
+  return [axis[0]*sine, axis[1]*sine, axis[2]*sine, Math.cos(half)];
+}
+
+function quaternionFromEuler(x,y,z) {
+  const cx=Math.cos(x/2), sx=Math.sin(x/2), cy=Math.cos(y/2), sy=Math.sin(y/2), cz=Math.cos(z/2), sz=Math.sin(z/2);
+  return [sx*cy*cz-cx*sy*sz, cx*sy*cz+sx*cy*sz, cx*cy*sz-sx*sy*cz, cx*cy*cz+sx*sy*sz];
+}
+
+function multiplyQuaternion(a,b) {
+  return [
+    a[3]*b[0]+a[0]*b[3]+a[1]*b[2]-a[2]*b[1],
+    a[3]*b[1]-a[0]*b[2]+a[1]*b[3]+a[2]*b[0],
+    a[3]*b[2]+a[0]*b[1]-a[1]*b[0]+a[2]*b[3],
+    a[3]*b[3]-a[0]*b[0]-a[1]*b[1]-a[2]*b[2]
+  ];
+}
+
+function rotateByQuaternion(vector, quaternion) {
+  const qVector = [quaternion[0], quaternion[1], quaternion[2]];
+  const uv = cross(qVector, vector);
+  const uuv = cross(qVector, uv);
+  return vector.map((value,index) => value + 2*(quaternion[3]*uv[index] + uuv[index]));
+}
+
+function slerp(a,b,t) {
+  let target = b;
+  let cosine = dot(a,b);
+  if (cosine < 0) { cosine = -cosine; target = b.map(value => -value); }
+  if (cosine > .9995) return normalizeQuaternion(a.map((value,index) => value + t*(target[index]-value)));
+  const theta = Math.acos(clamp(cosine,-1,1));
+  const sine = Math.sin(theta);
+  const first = Math.sin((1-t)*theta)/sine;
+  const second = Math.sin(t*theta)/sine;
+  return a.map((value,index) => value*first + target[index]*second);
+}
+
+function normalizeQuaternion(quaternion) {
+  const length = Math.hypot(...quaternion) || 1;
+  return quaternion.map(value => value / length);
 }
 
 function colorFor(sides, index) {
@@ -217,15 +225,15 @@ function shade(hex, amount) {
   return `rgb(${channels.join(",")})`;
 }
 
-function supportedSides(sides) {
-  const n = Number(sides);
-  return SHAPES[n] ? n : n <= 4 ? 4 : n <= 6 ? 6 : n <= 8 ? 8 : n <= 10 ? 10 : n <= 12 ? 12 : 20;
-}
-
 function easeOut(t) { return 1 - Math.pow(1 - clamp(t, 0, 1), 3); }
 function progress(die, now, started) { return clamp((now - started - die.delay) / die.duration, 0, 1); }
 function mix(a,b,t) { return a + (b-a)*t; }
 function clamp(value,min,max) { return Math.max(min,Math.min(max,value)); }
+function average(points) { return points[0].map((_,axis) => points.reduce((sum,point) => sum+point[axis],0)/points.length); }
+function dot(a,b) { return a.reduce((sum,value,index) => sum+value*b[index],0); }
+function cross(a,b) { return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
+function normalize(vector) { const length=Math.hypot(...vector)||1; return vector.map(value => value/length); }
+function polygonArea(points) { return Math.abs(points.reduce((sum,point,index) => { const next=points[(index+1)%points.length]; return sum+point[0]*next[1]-next[0]*point[1]; },0))/2; }
 
 export function playDiceSound(enabled = true) {
   if (!enabled || !globalThis.AudioContext && !globalThis.webkitAudioContext) return;

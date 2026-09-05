@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { importCharacterJson } from "../dist/js/importer.js";
 import { characterFeatureEffects } from "../dist/js/character-features.js";
+import { DICE_SHAPES, faceIndexForValue, labelForFace } from "../dist/js/dice-shapes.js";
 import { buildRollPlan, executeRoll, parseNotation, rollDie } from "../dist/js/roll-engine.js";
 import { EFFECT_PRESETS } from "../dist/js/rules-data.js";
 import { availableSpells, spellDamage, spellsForRuleset } from "../dist/js/spell-data.js";
@@ -64,6 +65,18 @@ test("secure die results stay within bounds", () => {
     for (let i = 0; i < 100; i += 1) {
       const value = rollDie(sides);
       assert.ok(value >= 1 && value <= sides);
+    }
+  }
+});
+
+test("uses the correct numbered polyhedron for each standard die", () => {
+  for (const sides of [4, 6, 8, 10, 12, 20]) {
+    const shape = DICE_SHAPES[sides];
+    assert.equal(shape.faces.length, sides);
+    assert.deepEqual([...shape.values].sort((a,b) => a-b), Array.from({ length: sides }, (_,index) => index+1));
+    for (let value = 1; value <= sides; value += 1) {
+      const faceIndex = faceIndexForValue(shape, sides, value);
+      assert.equal(labelForFace(shape, sides, faceIndex, value, faceIndex), String(value));
     }
   }
 });
