@@ -49,6 +49,90 @@ export function renderContextFields(state) {
   </div>`;
 }
 
+const MODIFIER_CATEGORIES = {
+  conditions: { label: "Conditions", groups: ["Your conditions", "Target conditions"] },
+  support: { label: "Support & spells", groups: ["Spells & support", "Damage riders"] },
+  combat: { label: "Combat modifiers", groups: ["Equipment & styles", "Target defenses", "Weapon mastery"] },
+  features: { label: "Features", groups: ["Feats", "Custom"] }
+};
+
+export function rollFamily(context) {
+  return ["attack", "damage"].includes(context) ? "weapon" : context;
+}
+
+export function renderAppliedModifiers(state) {
+  const active = getApplicableEffects(state, state.roll.context);
+  if (!active.length) return '<span class="applied-empty">No modifiers applied to this roll</span>';
+  return active.map(effect => `<button class="applied-chip" type="button" data-clear-effect="${effect.id}" title="Remove ${escapeHtml(effect.name)}">${escapeHtml(effect.name)} <span>${escapeHtml(entryValue(effect.entries, state, effect))} ×</span></button>`).join("");
+}
+
+export function renderRollSubrail(state) {
+  const family = rollFamily(state.roll.context);
+  const c = state.character;
+  if (family === "weapon") {
+    const weaponOptions = c.weapons.map(weapon => `<button class="option-chip ${weapon.id === state.roll.selectedWeaponId ? "is-active" : ""}" type="button" data-select-weapon="${weapon.id}">${escapeHtml(weapon.name)}</button>`).join("");
+    const contextual = state.roll.context === "attack"
+      ? `<span class="subcontext-divider"></span><label class="subcontext-field">Target <input data-roll-field="targetName" value="${escapeHtml(state.roll.targetName)}" placeholder="Optional"></label><label class="subcontext-field">AC <input data-roll-field="targetAC" value="${escapeHtml(state.roll.targetAC)}" type="number" min="1" max="40" placeholder="—"></label>`
+      : `<span class="subcontext-divider"></span><label class="subcontext-field critical-chip"><input data-roll-field="critical" type="checkbox" ${state.roll.critical ? "checked" : ""}>Critical hit</label>`;
+    return `<span class="subcontext-label">Roll</span><button class="option-chip ${state.roll.context === "attack" ? "is-active" : ""}" type="button" data-context="attack">Attack</button><button class="option-chip ${state.roll.context === "damage" ? "is-active" : ""}" type="button" data-context="damage">Damage</button><span class="subcontext-divider"></span><span class="subcontext-label">Weapon</span>${weaponOptions || '<span class="applied-empty">No weapons</span>'}<button class="option-chip" type="button" data-action="add-weapon">＋</button>${contextual}`;
+  }
+  if (family === "spell") {
+    const spells = c.spells.map(spell => `<button class="option-chip ${spell.id === state.roll.selectedSpellId ? "is-active" : ""}" type="button" data-select-spell="${spell.id}">${escapeHtml(spell.name)}</button>`).join("");
+    return `<span class="subcontext-label">Spell</span>${spells || '<button class="option-chip is-active" type="button">Generic spell attack</button>'}<button class="option-chip" type="button" data-action="add-spell">＋ Add spell</button>`;
+  }
+  if (family === "skill") return `<span class="subcontext-label">Check</span>${SKILLS.map(skill => `<button class="option-chip ${skill.key === state.roll.selectedSkill ? "is-active" : ""}" type="button" data-select-skill="${skill.key}">${escapeHtml(skill.label)} ${signed(skillModifier(state, skill))}</button>`).join("")}`;
+  if (family === "save") return `<span class="subcontext-label">Saving throw</span>${ABILITIES.map(ability => `<button class="option-chip ${ability.key === state.roll.selectedSave ? "is-active" : ""}" type="button" data-select-save="${ability.key}">${ability.short} ${signed(saveModifier(state, ability.key))}</button>`).join("")}`;
+  return `<span class="subcontext-label">Custom</span><label class="subcontext-field wide">Name <input data-roll-field="customLabel" value="${escapeHtml(state.roll.customLabel)}" placeholder="Initiative"></label><label class="subcontext-field wide">Dice <input data-roll-field="customNotation" value="${escapeHtml(state.roll.customNotation)}" placeholder="2d6 + 3" autocapitalize="off" spellcheck="false"></label>`;
+}
+
+export function renderDiceLoadout(state, plan) {
+  const shownDice = plan.dice.slice(0, 16).map(die => {
+    const source = die.critical ? `${die.label || "Base"} · critical` : die.label || (die.d20 ? "D20" : "Base dice");
+    const dieClass = [4, 8].includes(Number(die.sides)) ? `is-d${die.sides}` : `is-d${die.sides}`;
+    return `<div class="die-token ${dieClass}"><strong>d${die.sides}</strong><span class="die-source">${escapeHtml(source)}</span></div>`;
+  });
+  if (plan.dice.length > 16) shownDice.push(`<div class="flat-token"><strong>+${plan.dice.length - 16}</strong><small>more dice</small></div>`);
+  if (Number(plan.base.modifier)) shownDice.push(flatToken(signed(plan.base.modifier), "Base modifier"));
+  plan.effects.forEach(effect => effect.entries.forEach(entry => {
+    if (entry.kind === "flat") shownDice.push(flatToken(signed(entry.value), entry.label));
+    if (entry.kind === "proficiency") shownDice.push(flatToken(signed(state.character.proficiencyBonus), entry.label));
+    if (entry.kind === "multiplier") shownDice.push(flatToken(`×${entry.value}`, entry.label));
+    if (entry.kind === "targetAC") shownDice.push(flatToken(`AC ${signed(entry.value)}`, entry.label));
+  }));
+  return shownDice.join("") || '<span class="applied-empty">Enter valid dice notation</span>';
+}
+
+export function renderModifierPopover(state, category, query = "") {
+  if (category === "mode") {
+    const mode = state.roll.modeOverride || "normal";
+    return `<div class="mode-options">${["disadvantage", "normal", "advantage"].map(value => `<button class="${value === mode ? "is-active" : ""}" type="button" data-mode="${value}">${title(value)}</button>`).join("")}</div><p class="field-note">This manual choice overrides advantage or disadvantage supplied by active modifiers.</p>`;
+  }
+  const needle = query.trim().toLowerCase();
+  const definition = MODIFIER_CATEGORIES[category];
+  let catalog = effectCatalog(state).filter(effect => effect.rulesets?.includes(state.ruleset) || effect.rulesets?.includes("all"));
+  if (definition) catalog = catalog.filter(effect => definition.groups.includes(effect.group || "Custom"));
+  if (needle) catalog = catalog.filter(effect => [effect.name, effect.group, effect.summary].some(value => String(value || "").toLowerCase().includes(needle)));
+  if (!catalog.length) return '<div class="empty-inline">No matching modifiers.</div>';
+  const active = new Set([...(state.activeEffects || []), ...(state.roll.selectedEffects || [])]);
+  const grouped = groupBy(catalog);
+  return Object.entries(grouped).map(([group, effects]) => `<section><h3 class="modifier-group-title">${escapeHtml(group)}</h3>${effects.map(effect => {
+    const entries = effect.entries?.filter(entry => entry.contexts.includes(state.roll.context)) || [];
+    const contexts = [...new Set(effect.entries.flatMap(entry => entry.contexts))].map(title).join(", ");
+    const applicable = entries.length > 0;
+    return `<label class="modifier-option ${applicable ? "" : "is-disabled"}"><input type="checkbox" data-roll-effect="${effect.id}" ${active.has(effect.id) ? "checked" : ""} ${applicable ? "" : "disabled"}><span><strong>${escapeHtml(effect.name)}</strong><small>${escapeHtml(applicable ? effect.summary : `Applies to ${contexts}`)}</small></span><span class="modifier-value">${applicable ? escapeHtml(entryValue(entries, state, effect)) : "—"}</span></label>`;
+  }).join("")}</section>`).join("");
+}
+
+export function modifierCategoryLabel(category, query = "") {
+  if (category === "mode") return "Roll mode";
+  if (category === "search") return query ? `Results for “${query}”` : "All modifiers";
+  return MODIFIER_CATEGORIES[category]?.label || "Modifiers";
+}
+
+function flatToken(value, label) {
+  return `<div class="flat-token"><strong>${escapeHtml(value)}</strong><small>${escapeHtml(label)}</small></div>`;
+}
+
 export function renderRollModifiers(state) {
   const catalog = effectCatalog(state).filter(effect => (effect.rulesets || []).includes(state.ruleset) || (effect.rulesets || []).includes("all"));
   const relevant = catalog.filter(effect => effect.entries?.some(entry => entry.contexts.includes(state.roll.context)));
@@ -162,7 +246,8 @@ export function importModal() {
 }
 
 export function helpContent(state) {
-  return `<div class="help-section"><h3>Build a roll</h3><p>Choose the context, select the weapon, spell, skill, or save, then switch on only the modifiers that apply. Persistent conditions and features can be kept active from the Effects page. Advantage and disadvantage cancel one another regardless of how many sources apply.</p></div>
+  return `<div class="help-section"><h3>Build a roll</h3><p>Choose a roll family on the bottom rail, then use the thin rail above it to select the weapon, spell, skill, save, or damage roll. Add situational modifiers from the grouped controls along the top, or search the full modifier list. The center platform always shows the dice and numeric modifiers that will be rolled.</p></div>
+    <div class="help-section"><h3>Advantage and disadvantage</h3><p>Use the mode control at the right of the applied-modifier rail for a manual choice. Active conditions can also set the mode automatically. Advantage and disadvantage cancel one another regardless of how many sources apply.</p></div>
     <div class="help-section"><h3>What the app calculates</h3><ul><li>Attack and spell attack modifiers</li><li>Damage dice, critical dice, damage riders, resistance, and vulnerability</li><li>Skill and saving throw proficiency or expertise</li><li>Cover as adjusted target AC</li><li>2014 and 2024 rule-specific presets</li></ul></div>
     <div class="help-section"><h3>Import privacy</h3><p>Character files are read in your browser. Character data and roll history stay in this browser’s local storage.</p></div>
     <div class="help-section"><h3>Rules boundary</h3><p>This is a calculation aid, not a substitute for your character sheet or the rulebook. A preset says what arithmetic to apply. You still decide whether its triggering requirements are satisfied.</p></div>

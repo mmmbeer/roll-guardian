@@ -3,142 +3,82 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#101722">
+  <meta name="theme-color" content="#091018">
   <meta name="color-scheme" content="dark">
   <meta name="description" content="A private, mobile-first 5E dice assistant for attacks, damage, spells, skills, saves, conditions, and situational modifiers.">
-  <title>What Do I Roll?</title>
+  <title>Roll Guardian</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath fill='%23e6a845' d='M32 3 57 18v28L32 61 7 46V18z'/%3E%3Cpath fill='%23101722' d='m32 10 17 11-6 23-11 9-11-9-6-23zm0 8-9 6 3 13h12l3-13zm0 3 5 4-2 8h-6l-2-8z'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="./css/styles.css">
 </head>
-<body>
+<body data-view="roll">
   <a class="skip-link" href="#main">Skip to roller</a>
   <div class="app-shell">
     <header class="topbar">
       <button class="brand" type="button" data-view-link="roll" aria-label="Open roller">
         <span class="brand-mark" aria-hidden="true">20</span>
-        <span><strong>What Do I Roll?</strong><small>5E roll assistant</small></span>
+        <span class="brand-copy"><strong>Roll Guardian</strong><small id="characterSummary">5E roll assistant</small></span>
       </button>
-      <div class="topbar-actions">
-        <label class="rules-switch" title="Switch the rules used by presets">
-          <span class="sr-only">Rules version</span>
-          <select id="rulesetSelect" aria-label="Rules version">
-            <option value="2024">2024 rules</option>
-            <option value="2014">2014 rules</option>
-          </select>
+
+      <div class="modifier-tools" role="toolbar" aria-label="Add roll modifiers">
+        <button class="rail-button" type="button" data-modifier-category="conditions">Conditions</button>
+        <button class="rail-button" type="button" data-modifier-category="support">Support</button>
+        <button class="rail-button" type="button" data-modifier-category="combat">Combat</button>
+        <button class="rail-button" type="button" data-modifier-category="features">Features</button>
+        <label class="modifier-search">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></svg>
+          <span class="sr-only">Find a modifier</span>
+          <input id="modifierSearch" type="search" placeholder="Find modifier…" autocomplete="off">
         </label>
-        <button class="icon-btn" id="helpButton" type="button" aria-label="Help and rules notes" title="Help and rules notes">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.7 9a2.5 2.5 0 0 1 4.8 1c0 2-2.5 2.1-2.5 4M12 18h.01"/></svg>
-        </button>
+      </div>
+
+      <div class="topbar-actions">
+        <label class="rules-switch"><span class="sr-only">Rules version</span><select id="rulesetSelect" aria-label="Rules version"><option value="2024">2024</option><option value="2014">2014</option></select></label>
+        <button class="icon-btn" type="button" data-view-link="character" aria-label="Character" title="Character"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c.7-5 3.3-7 8-7s7.3 2 8 7"/></svg></button>
+        <button class="icon-btn" type="button" data-view-link="history" aria-label="Roll history" title="Roll history"><svg viewBox="0 0 24 24"><path d="M4 5v5h5M5.5 9a8 8 0 1 1-.7 5M12 7v5l3 2"/></svg></button>
+        <button class="icon-btn" id="helpButton" type="button" aria-label="Help" title="Help"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.7 9a2.5 2.5 0 0 1 4.8 1c0 2-2.5 2.1-2.5 4M12 18h.01"/></svg></button>
       </div>
     </header>
 
-    <aside class="sidebar" aria-label="Primary navigation">
-      <nav class="nav-list">
-        <button class="nav-item is-active" type="button" data-view-link="roll"><span class="nav-icon">◈</span><span>Roll</span></button>
-        <button class="nav-item" type="button" data-view-link="character"><span class="nav-icon">♙</span><span>Character</span></button>
-        <button class="nav-item" type="button" data-view-link="effects"><span class="nav-icon">✦</span><span>Effects</span><span class="nav-count" id="activeEffectCount">0</span></button>
-        <button class="nav-item" type="button" data-view-link="history"><span class="nav-icon">↶</span><span>History</span></button>
-      </nav>
-      <div class="sidebar-character" id="sidebarCharacter"></div>
-    </aside>
-
     <main id="main" class="main-content">
-      <section class="view is-active" id="view-roll" data-view="roll" aria-labelledby="rollHeading">
-        <div class="workspace-head">
-          <div><p class="eyebrow">Build the roll</p><h1 id="rollHeading">What are you doing?</h1></div>
-          <button class="quiet-btn" id="resetRoll" type="button">Reset</button>
+      <section class="view roll-workspace is-active" id="view-roll" data-view="roll" aria-label="Dice roller">
+        <div class="applied-rail">
+          <span class="rail-label">Applied</span>
+          <div class="applied-list" id="appliedModifiers"></div>
+          <button class="mode-pill" id="modeButton" type="button" data-modifier-category="mode">Normal</button>
         </div>
 
-        <div class="context-tabs" id="contextTabs" role="tablist" aria-label="Roll context">
-          <button type="button" role="tab" aria-selected="true" data-context="attack">Attack</button>
-          <button type="button" role="tab" aria-selected="false" data-context="damage">Damage</button>
-          <button type="button" role="tab" aria-selected="false" data-context="spell">Spell</button>
-          <button type="button" role="tab" aria-selected="false" data-context="skill">Skill</button>
-          <button type="button" role="tab" aria-selected="false" data-context="save">Save</button>
-          <button type="button" role="tab" aria-selected="false" data-context="custom">Custom</button>
-        </div>
+        <section class="roll-platform" aria-label="Roll platform">
+          <div class="platform-heading"><span id="rollSublabel">Weapon attack</span><h1 id="rollHeading">Longsword</h1><p id="rollFormula"></p></div>
+          <button class="sound-button" id="soundToggle" type="button" aria-pressed="true" aria-label="Toggle dice sound" title="Toggle dice sound"><svg viewBox="0 0 24 24"><path d="M5 9v6h4l5 4V5L9 9zM18 9a4 4 0 0 1 0 6M20 6a8 8 0 0 1 0 12"/></svg></button>
+          <div class="dice-stage" id="diceStage"><canvas id="diceCanvas" aria-label="Animated three-dimensional dice"></canvas><div class="dice-preview" id="dicePreview"></div><div class="roll-result" id="rollResult" hidden></div></div>
+          <button class="roll-button" id="rollButton" type="button"><span class="roll-button-icon" aria-hidden="true">◆</span><span><strong>Roll</strong><small id="rollButtonHint">Attack roll</small></span><kbd>Space</kbd></button>
+        </section>
 
-        <div class="roll-grid">
-          <section class="roll-card builder-card" aria-label="Roll choices">
-            <div id="contextFields"></div>
-            <div class="mode-group" id="modeGroup">
-              <span class="field-label">D20 mode</span>
-              <div class="segmented" role="group" aria-label="D20 roll mode">
-                <button type="button" data-mode="disadvantage">Disadvantage</button>
-                <button class="is-active" type="button" data-mode="normal">Normal</button>
-                <button type="button" data-mode="advantage">Advantage</button>
-              </div>
-              <p class="field-note" id="modeReason">No advantage or disadvantage applied.</p>
-            </div>
-            <div class="applied-section">
-              <div class="section-title-row"><h2>Applied modifiers</h2><button class="text-btn" id="quickAddModifier" type="button">+ Add</button></div>
-              <div class="modifier-list" id="rollModifiers"></div>
-            </div>
-            <div class="roll-formula" id="rollFormula" aria-live="polite"></div>
-          </section>
-
-          <section class="roll-card tray-card" aria-label="Dice tray">
-            <div class="tray-head">
-              <div><span class="field-label">Ready to roll</span><strong id="notationDisplay">1d20 + 5</strong></div>
-              <button class="icon-btn" id="soundToggle" type="button" aria-pressed="true" aria-label="Toggle dice sound" title="Toggle dice sound">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9v6h4l5 4V5L9 9zM18 9a4 4 0 0 1 0 6M20 6a8 8 0 0 1 0 12"/></svg>
-              </button>
-            </div>
-            <div class="dice-stage" id="diceStage">
-              <canvas id="diceCanvas" aria-label="Animated three-dimensional dice"></canvas>
-              <div class="tray-empty" id="trayEmpty"><span class="ghost-die">20</span><p>Your dice will land here</p></div>
-              <div class="roll-result" id="rollResult" hidden></div>
-            </div>
-            <button class="roll-button" id="rollButton" type="button"><span class="roll-button-icon" aria-hidden="true">◆</span><span><strong>Roll</strong><small id="rollButtonHint">Attack roll</small></span></button>
-            <p class="keyboard-hint">Press <kbd>Space</kbd> to roll</p>
-          </section>
-        </div>
+        <div class="subcontext-rail" id="subcontextRail" aria-label="Roll options"></div>
+        <nav class="context-rail" id="contextTabs" aria-label="Roll type">
+          <button type="button" data-roll-family="weapon"><span>◇</span>Weapon</button>
+          <button type="button" data-roll-family="spell"><span>✦</span>Spellcasting</button>
+          <button type="button" data-roll-family="skill"><span>⌁</span>Skills</button>
+          <button type="button" data-roll-family="save"><span>⬡</span>Saves</button>
+          <button type="button" data-roll-family="custom"><span>＋</span>Custom</button>
+        </nav>
       </section>
 
-      <section class="view" id="view-character" data-view="character" aria-labelledby="characterHeading">
-        <div class="workspace-head">
-          <div><p class="eyebrow">Your numbers</p><h1 id="characterHeading">Character</h1></div>
-          <button class="primary-small" id="openImport" type="button">Import sheet</button>
-        </div>
-        <div id="characterEditor"></div>
+      <section class="view secondary-view" id="view-character" data-view="character" aria-labelledby="characterHeading">
+        <div class="workspace-head"><div><p class="eyebrow">Your numbers</p><h1 id="characterHeading">Character</h1></div><div class="header-actions"><button class="quiet-btn" type="button" data-view-link="roll">Back to roller</button><button class="primary-small" id="openImport" type="button">Import sheet</button></div></div><div id="characterEditor"></div>
       </section>
-
-      <section class="view" id="view-effects" data-view="effects" aria-labelledby="effectsHeading">
-        <div class="workspace-head">
-          <div><p class="eyebrow">Conditions & features</p><h1 id="effectsHeading">Effects</h1></div>
-          <button class="primary-small" id="addEffect" type="button">Add effect</button>
-        </div>
-        <div class="notice" id="rulesetNotice"></div>
-        <div id="effectsEditor"></div>
+      <section class="view secondary-view" id="view-effects" data-view="effects" aria-labelledby="effectsHeading">
+        <div class="workspace-head"><div><p class="eyebrow">Conditions & features</p><h1 id="effectsHeading">All modifiers</h1></div><div class="header-actions"><button class="quiet-btn" type="button" data-view-link="roll">Back to roller</button><button class="primary-small" id="addEffect" type="button">Add modifier</button></div></div><div class="notice" id="rulesetNotice"></div><div id="effectsEditor"></div>
       </section>
-
-      <section class="view" id="view-history" data-view="history" aria-labelledby="historyHeading">
-        <div class="workspace-head">
-          <div><p class="eyebrow">This session</p><h1 id="historyHeading">Roll history</h1></div>
-          <button class="quiet-btn" id="clearHistory" type="button">Clear</button>
-        </div>
-        <div id="historyList"></div>
+      <section class="view secondary-view" id="view-history" data-view="history" aria-labelledby="historyHeading">
+        <div class="workspace-head"><div><p class="eyebrow">This session</p><h1 id="historyHeading">Roll history</h1></div><div class="header-actions"><button class="quiet-btn" type="button" data-view-link="roll">Back to roller</button><button class="quiet-btn" id="clearHistory" type="button">Clear</button></div></div><div id="historyList"></div>
       </section>
     </main>
-
-    <nav class="bottom-nav" aria-label="Primary navigation">
-      <button class="is-active" type="button" data-view-link="roll"><span>◈</span>Roll</button>
-      <button type="button" data-view-link="character"><span>♙</span>Character</button>
-      <button type="button" data-view-link="effects"><span>✦</span>Effects<i id="mobileEffectCount" hidden></i></button>
-      <button type="button" data-view-link="history"><span>↶</span>History</button>
-    </nav>
   </div>
 
-  <div class="modal-backdrop" id="modalBackdrop" hidden>
-    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
-      <header><h2 id="modalTitle"></h2><button class="icon-btn" type="button" data-close-modal aria-label="Close"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>
-      <div class="modal-body" id="modalBody"></div>
-      <footer id="modalFooter"></footer>
-    </section>
-  </div>
-
+  <aside class="modifier-popover" id="modifierPopover" role="dialog" aria-label="Choose modifiers" hidden><header><div><small id="popoverEyebrow">Modifiers</small><h2 id="popoverTitle">Conditions</h2></div><button class="icon-btn" id="closeModifierPopover" type="button" aria-label="Close modifier picker"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header><div class="popover-body" id="modifierPopoverBody"></div><footer><button class="text-btn" type="button" data-view-link="effects">Manage all</button><button class="text-btn" type="button" data-action="add-custom-effect">+ Custom modifier</button></footer></aside>
+  <div class="modal-backdrop" id="modalBackdrop" hidden><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><header><h2 id="modalTitle"></h2><button class="icon-btn" type="button" data-close-modal aria-label="Close"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header><div class="modal-body" id="modalBody"></div><footer id="modalFooter"></footer></section></div>
   <div class="toast-region" id="toastRegion" aria-live="polite"></div>
-
   <script type="module" src="./js/app.js"></script>
 </body>
 </html>

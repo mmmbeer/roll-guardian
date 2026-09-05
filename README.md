@@ -2,6 +2,8 @@
 
 A dependency-free, mobile-first 5E dice assistant built with HTML, CSS, and JavaScript.
 
+The roll view is organized as a full-viewport dice platform. Modifier groups and global search sit in the top rail, applicable modifiers appear directly below it, and context plus weapon, spell, skill, or save choices stay in two compact bottom rails.
+
 ## Included
 
 - 2014 and 2024 rule profiles

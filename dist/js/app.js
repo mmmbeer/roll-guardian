@@ -4,13 +4,15 @@ import { buildRollPlan, effectCatalog, executeRoll } from "./roll-engine.js";
 import { createDefaultState, loadState, proficiencyForLevel, saveState, uid } from "./state.js";
 import {
   $, $$, closeModal, effectForm, escapeHtml, helpContent, importModal, modalButtons,
-  openModal, renderCharacter, renderContextFields, renderEffects, renderHistory,
-  renderRollModifiers, signed, spellForm, toast, weaponForm
+  modifierCategoryLabel, openModal, renderAppliedModifiers, renderCharacter,
+  renderDiceLoadout, renderEffects, renderHistory, renderModifierPopover,
+  renderRollSubrail, rollFamily, signed, spellForm, toast, weaponForm
 } from "./ui.js";
 
 let state = loadState();
 let modalAction = null;
 let pendingImport = null;
+let modifierPicker = null;
 const tray = createDiceTray($("#diceCanvas"));
 
 renderAll();
@@ -24,36 +26,34 @@ function renderAll() {
   $("#effectsEditor").innerHTML = renderEffects(state);
   $("#historyList").innerHTML = renderHistory(state);
   $("#rulesetNotice").textContent = `${state.ruleset} presets are shown. Rules that change eligibility rather than arithmetic are left for you to confirm.`;
-  const active = state.activeEffects.length;
-  $("#activeEffectCount").textContent = active;
-  $("#mobileEffectCount").hidden = !active;
-  $("#sidebarCharacter").innerHTML = `<strong>${escapeHtml(state.character.name)}</strong><span>Level ${state.character.level} · PB ${signed(state.character.proficiencyBonus)}</span>`;
+  $("#characterSummary").textContent = `${state.character.name} · Level ${state.character.level}`;
+  refreshModifierPicker();
   saveState(state);
 }
 
 function renderNavigation() {
+  document.body.dataset.view = state.view;
   $$("[data-view]").forEach(view => view.classList.toggle("is-active", view.dataset.view === state.view));
   $$("[data-view-link]").forEach(button => button.classList.toggle("is-active", button.dataset.viewLink === state.view));
 }
 
 function renderRoll() {
-  $("#contextFields").innerHTML = renderContextFields(state);
-  $("#rollModifiers").innerHTML = renderRollModifiers(state);
-  $$("#contextTabs [data-context]").forEach(button => button.setAttribute("aria-selected", String(button.dataset.context === state.roll.context)));
+  $("#appliedModifiers").innerHTML = renderAppliedModifiers(state);
+  $("#subcontextRail").innerHTML = renderRollSubrail(state);
+  const family = rollFamily(state.roll.context);
+  $$("#contextTabs [data-roll-family]").forEach(button => button.classList.toggle("is-active", button.dataset.rollFamily === family));
   updateRollSummary();
 }
 
 function updateRollSummary() {
   const plan = buildRollPlan(state);
   $("#rollFormula").textContent = plan.formula;
-  $("#notationDisplay").textContent = plan.notation;
+  $("#rollHeading").textContent = plan.label;
+  $("#rollSublabel").textContent = plan.sublabel;
   $("#rollButtonHint").textContent = plan.label;
-  $$("[data-mode]").forEach(button => button.classList.toggle("is-active", button.dataset.mode === plan.mode));
-  const sources = plan.effects.flatMap(effect => effect.entries).filter(entry => entry.kind === "mode").map(entry => entry.label);
-  $("#modeReason").textContent = state.roll.modeOverride
-    ? `Manually set to ${plan.mode}. Tap Reset to use effect-based mode.`
-    : sources.length ? `${plan.mode === "normal" ? "Advantage and disadvantage cancel" : title(plan.mode)}: ${sources.join(", ")}.` : "No advantage or disadvantage applied.";
-  $("#modeGroup").hidden = !plan.base.isD20;
+  $("#modeButton").textContent = title(plan.mode);
+  $("#modeButton").hidden = !plan.base.isD20;
+  $("#dicePreview").innerHTML = renderDiceLoadout(state, plan);
   $("#soundToggle").setAttribute("aria-pressed", String(state.sound));
 }
 
@@ -67,6 +67,7 @@ function bindEvents() {
       runRoll();
     }
     if (event.key === "Escape" && !$("#modalBackdrop").hidden) closeModal();
+    else if (event.key === "Escape" && modifierPicker) closeModifierPicker();
   });
   document.addEventListener("submit", event => {
     if (event.target.closest(".modal")) {
@@ -80,18 +81,35 @@ function bindEvents() {
 }
 
 function handleClick(event) {
+  if (modifierPicker && !event.target.closest("#modifierPopover") && !event.target.closest("[data-modifier-category]") && !event.target.closest("#modifierSearch")) closeModifierPicker();
   const view = event.target.closest("[data-view-link]");
-  if (view) { state.view = view.dataset.viewLink; renderAll(); return; }
+  if (view) { state.view = view.dataset.viewLink; closeModifierPicker(); renderAll(); return; }
+  const modifierCategory = event.target.closest("[data-modifier-category]");
+  if (modifierCategory) { openModifierPicker(modifierCategory.dataset.modifierCategory); return; }
+  if (event.target.closest("#closeModifierPopover")) { closeModifierPicker(); return; }
+  if (event.target.closest("#modifierSearch")) { openModifierPicker("search", $("#modifierSearch").value); return; }
+  const family = event.target.closest("[data-roll-family]");
+  if (family) { selectRollFamily(family.dataset.rollFamily); return; }
   const context = event.target.closest("[data-context]");
-  if (context) { state.roll.context = context.dataset.context; state.roll.modeOverride = null; renderRoll(); saveState(state); return; }
+  if (context) { selectContext(context.dataset.context); return; }
+  const weapon = event.target.closest("[data-select-weapon]");
+  if (weapon) { state.roll.selectedWeaponId = weapon.dataset.selectWeapon; resetPlatform(); renderRoll(); saveState(state); return; }
+  const spell = event.target.closest("[data-select-spell]");
+  if (spell) { state.roll.selectedSpellId = spell.dataset.selectSpell; resetPlatform(); renderRoll(); saveState(state); return; }
+  const skill = event.target.closest("[data-select-skill]");
+  if (skill) { state.roll.selectedSkill = skill.dataset.selectSkill; resetPlatform(); renderRoll(); saveState(state); return; }
+  const save = event.target.closest("[data-select-save]");
+  if (save) { state.roll.selectedSave = save.dataset.selectSave; resetPlatform(); renderRoll(); saveState(state); return; }
+  const clearEffect = event.target.closest("[data-clear-effect]");
+  if (clearEffect) { setEffectEnabled(clearEffect.dataset.clearEffect, false); return; }
   const mode = event.target.closest("[data-mode]");
-  if (mode) { state.roll.modeOverride = mode.dataset.mode; renderRoll(); saveState(state); return; }
+  if (mode) { state.roll.modeOverride = mode.dataset.mode; closeModifierPicker(); resetPlatform(); renderRoll(); saveState(state); return; }
   if (event.target.closest("[data-close-modal]")) { closeModal(); return; }
   if (event.target.closest("#rollButton")) { runRoll(); return; }
   if (event.target.closest("#resetRoll")) { resetRoll(); return; }
   if (event.target.closest("#helpButton")) { openModal("How to use this", helpContent(state), '<button class="modal-button primary" type="button" data-close-modal>Done</button>'); return; }
   if (event.target.closest("#openImport")) { openImportDialog(); return; }
-  if (event.target.closest("#quickAddModifier") || event.target.closest("#addEffect")) { openEffectEditor(); return; }
+  if (event.target.closest("#addEffect") || event.target.closest('[data-action="add-custom-effect"]')) { closeModifierPicker(); openEffectEditor(); return; }
   if (event.target.closest("#soundToggle")) { state.sound = !state.sound; $("#soundToggle").setAttribute("aria-pressed", String(state.sound)); toast(state.sound ? "Dice sound on" : "Dice sound off"); saveState(state); return; }
   if (event.target.closest("#clearHistory")) { confirmClearHistory(); return; }
   const action = event.target.closest("[data-action]")?.dataset.action;
@@ -132,12 +150,10 @@ function handleChange(event) {
     const key = target.dataset.rollField;
     state.roll[key] = target.type === "checkbox" ? target.checked : target.value;
     state.roll.modeOverride = null;
-    renderRoll(); saveState(state); return;
+    resetPlatform(); renderRoll(); saveState(state); return;
   }
   if (target.matches("[data-roll-effect]")) {
-    toggleArray(state.roll.selectedEffects, target.dataset.rollEffect, target.checked);
-    if (!target.checked) toggleArray(state.activeEffects, target.dataset.rollEffect, false);
-    state.roll.modeOverride = null; renderAll(); return;
+    setEffectEnabled(target.dataset.rollEffect, target.checked); return;
   }
   if (target.matches("[data-active-effect]")) {
     toggleArray(state.activeEffects, target.dataset.activeEffect, target.checked);
@@ -159,9 +175,14 @@ function handleChange(event) {
 
 function handleInput(event) {
   const target = event.target;
+  if (target.id === "modifierSearch") {
+    modifierPicker = { category: "search", query: target.value };
+    refreshModifierPicker();
+    return;
+  }
   if (target.matches("[data-roll-field]") && ["targetName", "targetAC", "customLabel", "customNotation"].includes(target.dataset.rollField)) {
     state.roll[target.dataset.rollField] = target.value;
-    updateRollSummary(); saveState(state);
+    resetPlatform(); updateRollSummary(); saveState(state);
   }
 }
 
@@ -170,7 +191,7 @@ function runRoll() {
   const plan = buildRollPlan(state);
   if (!plan.dice.length) { toast("Enter valid dice notation first."); return; }
   const outcome = executeRoll(plan);
-  $("#trayEmpty").style.opacity = "0";
+  $("#dicePreview").hidden = true;
   $("#rollResult").hidden = true;
   $("#rollButton").disabled = true;
   playDiceSound(state.sound);
@@ -202,9 +223,60 @@ function resultDetail(plan, outcome) {
 function resetRoll() {
   const defaults = createDefaultState().roll;
   state.roll = { ...defaults, context: state.roll.context, selectedWeaponId: state.character.weapons[0]?.id || null, selectedSpellId: state.character.spells[0]?.id || null };
-  $("#rollResult").hidden = true;
-  $("#trayEmpty").style.opacity = "1";
+  resetPlatform();
   renderAll();
+}
+
+function selectRollFamily(family) {
+  const context = family === "weapon" ? (["attack", "damage"].includes(state.roll.context) ? state.roll.context : "attack") : family;
+  selectContext(context);
+}
+
+function selectContext(context) {
+  state.roll.context = context;
+  state.roll.modeOverride = null;
+  closeModifierPicker();
+  resetPlatform();
+  renderRoll();
+  saveState(state);
+}
+
+function setEffectEnabled(id, enabled) {
+  toggleArray(state.roll.selectedEffects, id, enabled);
+  if (!enabled) toggleArray(state.activeEffects, id, false);
+  state.roll.modeOverride = null;
+  resetPlatform();
+  renderAll();
+}
+
+function resetPlatform() {
+  $("#rollResult").hidden = true;
+  $("#dicePreview").hidden = false;
+}
+
+function openModifierPicker(category, query = "") {
+  if (modifierPicker?.category === category && !$("#modifierPopover").hidden && category !== "search") {
+    closeModifierPicker();
+    return;
+  }
+  modifierPicker = { category, query };
+  refreshModifierPicker();
+}
+
+function refreshModifierPicker() {
+  const popover = $("#modifierPopover");
+  if (!modifierPicker) { popover.hidden = true; return; }
+  popover.hidden = false;
+  $("#popoverEyebrow").textContent = `${title(state.roll.context)} roll`;
+  $("#popoverTitle").textContent = modifierCategoryLabel(modifierPicker.category, modifierPicker.query);
+  $("#modifierPopoverBody").innerHTML = renderModifierPopover(state, modifierPicker.category, modifierPicker.query);
+  $$("[data-modifier-category]").forEach(button => button.classList.toggle("is-open", button.dataset.modifierCategory === modifierPicker.category));
+}
+
+function closeModifierPicker() {
+  modifierPicker = null;
+  $("#modifierPopover").hidden = true;
+  $$("[data-modifier-category]").forEach(button => button.classList.remove("is-open"));
 }
 
 function openWeaponEditor(weapon = null) {
