@@ -15,7 +15,13 @@ A dependency-free, mobile-first 5E dice assistant built with HTML, CSS, and Java
 
 ## Run locally
 
-Serve the `dist` directory with any static web server. No build step or external runtime dependency is required.
+Serve the `dist` directory with any static web server, or run:
+
+```sh
+npm run dev
+```
+
+No application build step is required.
 
 ## Cloudflare Pages
 
@@ -29,7 +35,21 @@ For a Git-connected Cloudflare Pages project use:
 - Build output directory: `dist`
 - Root directory: repository root
 
+If the Cloudflare project has a separate **Deploy command** field, set it to:
+
+```sh
+npm run deploy
+```
+
+Do not use `npx wrangler deploy`. That command targets Cloudflare Workers. This repository is configured for Pages, so its deploy script uses `wrangler pages deploy` and explicitly uploads `dist`.
+
 The `dist/_headers` file sets a restrictive content security policy and other browser security headers. Character data remains in the visitor's browser and the application makes no network requests.
+
+## Tests
+
+```sh
+npm test
+```
 
 ## Character imports
 
