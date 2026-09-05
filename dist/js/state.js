@@ -1,4 +1,4 @@
-import { ABILITIES, SKILLS } from "./rules-data.js?v=1.1.1";
+import { ABILITIES, SKILLS } from "./rules-data.js?v=1.2.0";
 
 const STORAGE_KEY = "whatDoIRoll.v1";
 
@@ -6,6 +6,9 @@ function defaultCharacter() {
   return {
     name: "My character",
     level: 5,
+    imported: false,
+    classes: [],
+    featureNames: [],
     proficiencyBonus: 3,
     spellAbility: "wis",
     spellAttackBonus: null,
@@ -36,6 +39,9 @@ export function createDefaultState() {
       modeOverride: null,
       selectedWeaponId: null,
       selectedSpellId: null,
+      spellPhase: "damage",
+      spellSlotLevel: 1,
+      spellDamageIndex: 0,
       selectedSkill: "perception",
       selectedSave: "wis",
       targetName: "",
@@ -85,6 +91,9 @@ export function proficiencyForLevel(level) {
 }
 
 function seedSelections(state) {
+  if (!Array.isArray(state.character.classes)) state.character.classes = [];
+  if (!Array.isArray(state.character.featureNames)) state.character.featureNames = [];
+  if (!Array.isArray(state.character.spells)) state.character.spells = [];
   if (!state.roll.selectedWeaponId || !state.character.weapons.some(w => w.id === state.roll.selectedWeaponId)) {
     state.roll.selectedWeaponId = state.character.weapons[0]?.id || null;
   }
@@ -92,5 +101,6 @@ function seedSelections(state) {
   if (!Array.isArray(state.activeEffects)) state.activeEffects = [];
   if (!Array.isArray(state.customEffects)) state.customEffects = [];
   if (!Array.isArray(state.history)) state.history = [];
+  if (!Number.isInteger(Number(state.roll.spellDamageIndex))) state.roll.spellDamageIndex = 0;
   return state;
 }

@@ -70,7 +70,7 @@ const common = [
     entries: [{ contexts: ["damage"], kind: "die", notation: "1d6", label: "Hunter’s Mark" }]
   },
   {
-    id: "sneak-attack", name: "Sneak Attack", group: "Damage riders", rulesets: ["2014", "2024"], configurable: "dice",
+    id: "sneak-attack", name: "Sneak Attack", group: "Damage riders", rulesets: ["2014", "2024"], configurable: "dice", rollScope: "weapon",
     summary: "Add your current Sneak Attack dice when its triggering requirements are met.",
     entries: [{ contexts: ["damage"], kind: "die", notation: "3d6", label: "Sneak Attack" }]
   },

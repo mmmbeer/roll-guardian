@@ -9,6 +9,8 @@ The roll view is organized as a full-viewport dice platform. Modifier groups and
 - 2014 and 2024 rule profiles
 - Attack, damage, spell, skill, saving throw, and custom roll contexts
 - Weapon-specific attack and damage math
+- Rollable SRD 5.1 and 5.2.1 spell catalogs with attack/damage phases and scaling
+- Imported class detection with context-aware character feature shortcuts
 - Conditions, feats, spell riders, target cover, resistance, and vulnerability
 - User-defined flat, dice, advantage, disadvantage, target-AC, and damage-multiplier effects
 - Client-side D&D Beyond PDF and JSON character import
@@ -57,7 +59,7 @@ npm test
 
 ## Character imports
 
-JSON exports provide the most complete import. D&D Beyond PDF structure varies, so the PDF importer reads exposed form fields and applies conservative heuristics. Review imported weapons and ability scores before play.
+JSON exports provide the most complete import, including classes, recognizable class features, and known spells. Known spells are marked and sorted above the SRD catalog. D&D Beyond PDF structure varies, so the PDF importer reads exposed form fields and applies conservative heuristics. Review imported weapons and ability scores before play.
 
 ## Open rules material
 

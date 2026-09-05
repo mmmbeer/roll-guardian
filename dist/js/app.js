@@ -1,13 +1,14 @@
-import { createDiceTray, playDiceSound } from "./dice-3d.js?v=1.1.1";
-import { importCharacterFile } from "./importer.js?v=1.1.1";
-import { buildRollPlan, effectCatalog, executeRoll } from "./roll-engine.js?v=1.1.1";
-import { createDefaultState, loadState, proficiencyForLevel, saveState, uid } from "./state.js?v=1.1.1";
+import { createDiceTray, playDiceSound } from "./dice-3d.js?v=1.2.0";
+import { importCharacterFile } from "./importer.js?v=1.2.0";
+import { buildRollPlan, effectCatalog, executeRoll } from "./roll-engine.js?v=1.2.0";
+import { createDefaultState, loadState, proficiencyForLevel, saveState, uid } from "./state.js?v=1.2.0";
+import { selectedSpell } from "./spell-data.js?v=1.2.0";
 import {
   $, $$, closeModal, effectForm, escapeHtml, helpContent, importModal, modalButtons,
   modifierCategoryLabel, openModal, renderAppliedModifiers, renderCharacter,
   renderDiceLoadout, renderEffects, renderHistory, renderModifierPopover,
   renderRollSubrail, rollFamily, signed, spellForm, toast, weaponForm
-} from "./ui.js?v=1.1.1";
+} from "./ui.js?v=1.2.0";
 
 let state = loadState();
 let modalAction = null;
@@ -95,7 +96,9 @@ function handleClick(event) {
   const weapon = event.target.closest("[data-select-weapon]");
   if (weapon) { state.roll.selectedWeaponId = weapon.dataset.selectWeapon; resetPlatform(); renderRoll(); saveState(state); return; }
   const spell = event.target.closest("[data-select-spell]");
-  if (spell) { state.roll.selectedSpellId = spell.dataset.selectSpell; resetPlatform(); renderRoll(); saveState(state); return; }
+  if (spell) { state.roll.selectedSpellId = spell.dataset.selectSpell; resetSpellChoices(); resetPlatform(); renderRoll(); saveState(state); return; }
+  const spellPhase = event.target.closest("[data-spell-phase]");
+  if (spellPhase) { state.roll.spellPhase = spellPhase.dataset.spellPhase; state.roll.modeOverride = null; resetPlatform(); renderRoll(); saveState(state); return; }
   const skill = event.target.closest("[data-select-skill]");
   if (skill) { state.roll.selectedSkill = skill.dataset.selectSkill; resetPlatform(); renderRoll(); saveState(state); return; }
   const save = event.target.closest("[data-select-save]");
@@ -143,12 +146,15 @@ function handleChange(event) {
   if (target.id === "rulesetSelect") {
     state.ruleset = target.value;
     state.roll.modeOverride = null;
+    state.roll.selectedSpellId = null;
+    resetSpellChoices();
     renderAll();
     return;
   }
   if (target.matches("[data-roll-field]")) {
     const key = target.dataset.rollField;
     state.roll[key] = target.type === "checkbox" ? target.checked : target.value;
+    if (key === "selectedSpellId") resetSpellChoices();
     state.roll.modeOverride = null;
     resetPlatform(); renderRoll(); saveState(state); return;
   }
@@ -213,7 +219,7 @@ function finishRoll(plan, outcome) {
 function resultDetail(plan, outcome) {
   const dice = outcome.usedResults.map(die => `${die.sign < 0 ? "−" : ""}${die.value}`).join(" + ");
   const parts = [dice, plan.flat ? signed(plan.flat) : ""].filter(Boolean).join(" ");
-  if (plan.context === "attack" && plan.effectiveAC) return `${outcome.hit ? "Hit" : "Miss"} vs. AC ${plan.effectiveAC} · ${parts}${outcome.discarded ? ` · discarded ${outcome.discarded}` : ""}`;
+  if (plan.base.attackRoll && plan.effectiveAC) return `${outcome.hit ? "Hit" : "Miss"} vs. AC ${plan.effectiveAC} · ${parts}${outcome.discarded ? ` · discarded ${outcome.discarded}` : ""}`;
   if (outcome.naturalCritical) return `Natural 20 · ${parts}`;
   if (outcome.naturalOne) return `Natural 1 · ${parts}`;
   if (outcome.multiplier !== 1) return `${parts} · ${outcome.raw} × ${outcome.multiplier}`;
@@ -223,6 +229,7 @@ function resultDetail(plan, outcome) {
 function resetRoll() {
   const defaults = createDefaultState().roll;
   state.roll = { ...defaults, context: state.roll.context, selectedWeaponId: state.character.weapons[0]?.id || null, selectedSpellId: state.character.spells[0]?.id || null };
+  if (state.roll.context === "spell") resetSpellChoices();
   resetPlatform();
   renderAll();
 }
@@ -295,9 +302,9 @@ function openSpellEditor(spell = null) {
   modalAction = () => {
     const form = $("#spellForm"); if (!form.reportValidity()) return;
     const data = Object.fromEntries(new FormData(form));
-    const value = { id: spell?.id || uid(), name: data.name.trim(), rollType: data.rollType, damage: data.damage.trim(), damageType: data.damageType, attackBonus: nullableNumber(data.attackBonus), saveDC: nullableNumber(data.saveDC), damageBonus: 0 };
+    const value = { id: spell?.id || uid(), name: data.name.trim(), rollType: data.rollType, damage: data.damage.trim(), damageType: data.damageType, attackBonus: nullableNumber(data.attackBonus), saveDC: nullableNumber(data.saveDC), damageBonus: 0, source: "custom", imported: false };
     if (spell) Object.assign(spell, value); else state.character.spells.push(value);
-    state.roll.selectedSpellId = value.id; closeModal(); renderAll(); toast(spell ? "Spell updated" : "Spell added");
+    state.roll.selectedSpellId = value.id; resetSpellChoices(); closeModal(); renderAll(); toast(spell ? "Spell updated" : "Spell added");
   };
 }
 
@@ -352,6 +359,7 @@ function openImportDialog() {
     state.character = { ...state.character, ...pendingImport.character };
     state.roll.selectedWeaponId = state.character.weapons[0]?.id || null;
     state.roll.selectedSpellId = state.character.spells[0]?.id || null;
+    resetSpellChoices();
     closeModal(); renderAll(); toast(`${state.character.name} imported`);
   };
 }
@@ -370,7 +378,7 @@ async function parseCharacterImport(file) {
 }
 
 function fillWeaponForm(index) {
-  import("./rules-data.js?v=1.1.1").then(({ WEAPON_LIBRARY }) => {
+  import("./rules-data.js?v=1.2.0").then(({ WEAPON_LIBRARY }) => {
     const weapon = WEAPON_LIBRARY[index]; const form = $("#weaponForm"); if (!weapon || !form) return;
     ["name","ability","damage","damageType","properties"].forEach(key => { form.elements[key].value = weapon[key]; });
   });
@@ -415,6 +423,15 @@ function toggleArray(array, value, enabled) {
   const index = array.indexOf(value);
   if (enabled && index < 0) array.push(value);
   if (!enabled && index >= 0) array.splice(index, 1);
+}
+
+function resetSpellChoices() {
+  const spell = selectedSpell(state);
+  state.roll.selectedSpellId = spell?.id || null;
+  state.roll.spellPhase = spell?.attack ? "attack" : "damage";
+  state.roll.spellSlotLevel = Math.max(1, Number(spell?.level || 1));
+  state.roll.spellDamageIndex = 0;
+  state.roll.critical = false;
 }
 
 function nullableNumber(value) { return value === "" || value == null ? null : Number(value); }

@@ -1,6 +1,8 @@
-import { ABILITIES, DAMAGE_TYPES, EFFECT_PRESETS, SKILLS, WEAPON_LIBRARY, effectsForRuleset } from "./rules-data.js?v=1.1.1";
-import { abilityModifier } from "./state.js?v=1.1.1";
-import { baseForContext, effectCatalog, getApplicableEffects } from "./roll-engine.js?v=1.1.1";
+import { ABILITIES, DAMAGE_TYPES, SKILLS, WEAPON_LIBRARY } from "./rules-data.js?v=1.2.0";
+import { classSummary } from "./character-features.js?v=1.2.0";
+import { availableSpells, selectedSpell, spellDamage } from "./spell-data.js?v=1.2.0";
+import { abilityModifier } from "./state.js?v=1.2.0";
+import { effectCatalog, effectContextsForRoll, effectMatchesRollScope, getApplicableEffects } from "./roll-engine.js?v=1.2.0";
 
 export const $ = selector => document.querySelector(selector);
 export const $$ = selector => [...document.querySelectorAll(selector)];
@@ -53,7 +55,7 @@ const MODIFIER_CATEGORIES = {
   conditions: { label: "Conditions", groups: ["Your conditions", "Target conditions"] },
   support: { label: "Support & spells", groups: ["Spells & support", "Damage riders"] },
   combat: { label: "Combat modifiers", groups: ["Equipment & styles", "Target defenses", "Weapon mastery"] },
-  features: { label: "Features", groups: ["Feats", "Custom"] }
+  features: { label: "Features", groups: ["Character features", "Feats", "Custom"] }
 };
 
 export function rollFamily(context) {
@@ -61,7 +63,7 @@ export function rollFamily(context) {
 }
 
 export function renderAppliedModifiers(state) {
-  const active = getApplicableEffects(state, state.roll.context);
+  const active = getApplicableEffects(state, effectContextsForRoll(state));
   if (!active.length) return '<span class="applied-empty">No modifiers applied to this roll</span>';
   return active.map(effect => `<button class="applied-chip" type="button" data-clear-effect="${effect.id}" title="Remove ${escapeHtml(effect.name)}">${escapeHtml(effect.name)} <span>${escapeHtml(entryValue(effect.entries, state, effect))} ×</span></button>`).join("");
 }
@@ -77,8 +79,17 @@ export function renderRollSubrail(state) {
     return `<span class="subcontext-label">Roll</span><button class="option-chip ${state.roll.context === "attack" ? "is-active" : ""}" type="button" data-context="attack">Attack</button><button class="option-chip ${state.roll.context === "damage" ? "is-active" : ""}" type="button" data-context="damage">Damage</button><span class="subcontext-divider"></span><span class="subcontext-label">Weapon</span>${weaponOptions || '<span class="applied-empty">No weapons</span>'}<button class="option-chip" type="button" data-action="add-weapon">＋</button>${contextual}`;
   }
   if (family === "spell") {
-    const spells = c.spells.map(spell => `<button class="option-chip ${spell.id === state.roll.selectedSpellId ? "is-active" : ""}" type="button" data-select-spell="${spell.id}">${escapeHtml(spell.name)}</button>`).join("");
-    return `<span class="subcontext-label">Spell</span>${spells || '<button class="option-chip is-active" type="button">Generic spell attack</button>'}<button class="option-chip" type="button" data-action="add-spell">＋ Add spell</button>`;
+    const groups = availableSpells(state);
+    const spell = selectedSpell(state);
+    const phase = spell?.attack && state.roll.spellPhase !== "damage" ? "attack" : "damage";
+    const damage = spellDamage(spell, c.level, state.roll.spellSlotLevel, state.roll.spellDamageIndex);
+    return `<label class="subcontext-field spell-picker"><span>Spell</span><select data-roll-field="selectedSpellId" aria-label="Spell">${groups.known.length ? `<optgroup label="★ ${escapeHtml(c.name)}’s spells">${spellOptions(groups.known, state.roll.selectedSpellId, true)}</optgroup>` : ""}<optgroup label="SRD ${state.ruleset === "2014" ? "5.1" : "5.2.1"}">${spellOptions(groups.library, state.roll.selectedSpellId, false)}</optgroup></select></label>
+      ${spell?.attack && spell.damages.length ? `<span class="subcontext-divider"></span><span class="subcontext-label">Roll</span><button class="option-chip ${phase === "attack" ? "is-active" : ""}" type="button" data-spell-phase="attack">Attack</button><button class="option-chip ${phase === "damage" ? "is-active" : ""}" type="button" data-spell-phase="damage">Damage</button>` : ""}
+      ${phase === "damage" && spell?.level > 0 ? `<label class="subcontext-field"><span>Cast</span><select data-roll-field="spellSlotLevel" aria-label="Spell slot level">${slotOptions(spell.level, state.roll.spellSlotLevel)}</select></label>` : ""}
+      ${phase === "damage" && spell?.damages.length > 1 ? `<label class="subcontext-field"><span>Damage</span><select data-roll-field="spellDamageIndex" aria-label="Damage roll">${spell.damages.map((entry,index) => `<option value="${index}" ${index === Number(state.roll.spellDamageIndex) ? "selected" : ""}>${escapeHtml(entry.notation)} ${escapeHtml(entry.damageType)}</option>`).join("")}</select></label>` : ""}
+      ${phase === "attack" ? `<label class="subcontext-field">Target <input data-roll-field="targetName" value="${escapeHtml(state.roll.targetName)}" placeholder="Optional"></label><label class="subcontext-field">AC <input data-roll-field="targetAC" value="${escapeHtml(state.roll.targetAC)}" type="number" min="1" max="40" placeholder="—"></label>` : ""}
+      ${phase === "damage" && spell?.attack ? `<label class="subcontext-field critical-chip"><input data-roll-field="critical" type="checkbox" ${state.roll.critical ? "checked" : ""}>Critical</label>` : ""}
+      ${phase === "damage" ? `<span class="spell-damage-summary">${escapeHtml(damage.notation)} · ${escapeHtml(damage.damageType)}</span>` : ""}<button class="option-chip" type="button" data-action="add-spell">＋</button>`;
   }
   if (family === "skill") return `<span class="subcontext-label">Check</span>${SKILLS.map(skill => `<button class="option-chip ${skill.key === state.roll.selectedSkill ? "is-active" : ""}" type="button" data-select-skill="${skill.key}">${escapeHtml(skill.label)} ${signed(skillModifier(state, skill))}</button>`).join("")}`;
   if (family === "save") return `<span class="subcontext-label">Saving throw</span>${ABILITIES.map(ability => `<button class="option-chip ${ability.key === state.roll.selectedSave ? "is-active" : ""}" type="button" data-select-save="${ability.key}">${ability.short} ${signed(saveModifier(state, ability.key))}</button>`).join("")}`;
@@ -109,6 +120,7 @@ export function renderModifierPopover(state, category, query = "") {
   }
   const needle = query.trim().toLowerCase();
   const definition = MODIFIER_CATEGORIES[category];
+  const rollContexts = effectContextsForRoll(state);
   let catalog = effectCatalog(state).filter(effect => effect.rulesets?.includes(state.ruleset) || effect.rulesets?.includes("all"));
   if (definition) catalog = catalog.filter(effect => definition.groups.includes(effect.group || "Custom"));
   if (needle) catalog = catalog.filter(effect => [effect.name, effect.group, effect.summary].some(value => String(value || "").toLowerCase().includes(needle)));
@@ -116,9 +128,9 @@ export function renderModifierPopover(state, category, query = "") {
   const active = new Set([...(state.activeEffects || []), ...(state.roll.selectedEffects || [])]);
   const grouped = groupBy(catalog);
   return Object.entries(grouped).map(([group, effects]) => `<section><h3 class="modifier-group-title">${escapeHtml(group)}</h3>${effects.map(effect => {
-    const entries = effect.entries?.filter(entry => entry.contexts.includes(state.roll.context)) || [];
+    const entries = effect.entries?.filter(entry => entry.contexts.some(context => rollContexts.includes(context))) || [];
     const contexts = [...new Set(effect.entries.flatMap(entry => entry.contexts))].map(title).join(", ");
-    const applicable = entries.length > 0;
+    const applicable = entries.length > 0 && effectMatchesRollScope(state, effect);
     return `<label class="modifier-option ${applicable ? "" : "is-disabled"}"><input type="checkbox" data-roll-effect="${effect.id}" ${active.has(effect.id) ? "checked" : ""} ${applicable ? "" : "disabled"}><span><strong>${escapeHtml(effect.name)}</strong><small>${escapeHtml(applicable ? effect.summary : `Applies to ${contexts}`)}</small></span><span class="modifier-value">${applicable ? escapeHtml(entryValue(entries, state, effect)) : "—"}</span></label>`;
   }).join("")}</section>`).join("");
 }
@@ -153,7 +165,7 @@ export function renderCharacter(state) {
   return `<div class="panel-stack">
     <section class="panel">
       <div class="panel-head"><h2>Basics</h2><span class="field-note">Saved only on this device</span></div>
-      <div class="field-grid">
+      ${c.imported && classSummary(c) ? `<div class="imported-character-note"><span>Imported character</span><strong>${escapeHtml(classSummary(c))}</strong></div>` : ""}<div class="field-grid">
         <label class="field span-2"><span class="field-label">Character name</span><input data-character="name" value="${escapeHtml(c.name)}"></label>
         <label class="field"><span class="field-label">Level</span><input data-character="level" type="number" min="1" max="20" value="${c.level}"></label>
         <label class="field"><span class="field-label">Proficiency bonus</span><input data-character="proficiencyBonus" type="number" min="2" max="9" value="${c.proficiencyBonus}"></label>
@@ -177,7 +189,7 @@ export function renderCharacter(state) {
     </section>
     <section class="panel">
       <div class="panel-head"><h2>Spells</h2><button class="text-btn" type="button" data-action="add-spell">+ Add spell</button></div>
-      <div class="data-list">${c.spells.length ? c.spells.map(spell => `<div class="data-row"><div><strong>${escapeHtml(spell.name)}</strong><small>${labelRollType(spell.rollType)}${spell.damage ? ` · ${escapeHtml(spell.damage)}` : ""}</small></div><span class="row-meta">${spell.rollType === "attack" ? `Attack ${signed(spell.attackBonus ?? spellAttack(state))}` : spell.rollType === "save" ? `Save DC ${spell.saveDC || spellSaveDC(state)}` : escapeHtml(spell.damageType || "")}</span><div class="row-actions"><button class="mini-btn" type="button" data-edit-spell="${spell.id}">Edit</button><button class="mini-btn danger" type="button" data-delete-spell="${spell.id}">×</button></div></div>`).join("") : '<div class="empty-inline">No spell presets yet.</div>'}</div>
+      <div class="data-list">${c.spells.length ? c.spells.map(spell => `<div class="data-row"><div><strong>${spell.imported ? '<span class="known-mark">★</span> ' : ""}${escapeHtml(spell.name)}</strong><small>${spell.imported ? "Imported spell" : labelRollType(spell.rollType)}${spell.damage ? ` · ${escapeHtml(spell.damage)}` : ""}</small></div><span class="row-meta">${spell.rollType === "attack" ? `Attack ${signed(spell.attackBonus ?? spellAttack(state))}` : spell.rollType === "save" ? `Save DC ${spell.saveDC || spellSaveDC(state)}` : escapeHtml(spell.damageType || "")}</span><div class="row-actions"><button class="mini-btn" type="button" data-edit-spell="${spell.id}">Edit</button><button class="mini-btn danger" type="button" data-delete-spell="${spell.id}">×</button></div></div>`).join("") : '<div class="empty-inline">No character spells or custom presets yet. The full SRD catalog is available on the Spellcasting rail.</div>'}</div>
     </section>
     <section class="panel">
       <div class="panel-head"><h2>Equipment</h2><button class="text-btn" type="button" data-action="add-item">+ Add item</button></div>
@@ -191,7 +203,8 @@ export function renderCharacter(state) {
 }
 
 export function renderEffects(state) {
-  const groups = Object.groupBy ? Object.groupBy([...effectsForRuleset(state.ruleset), ...(state.customEffects || [])], effect => effect.group || "Custom") : groupBy([...effectsForRuleset(state.ruleset), ...(state.customEffects || [])]);
+  const catalog = effectCatalog(state).filter(effect => effect.rulesets.includes(state.ruleset) || effect.rulesets.includes("all"));
+  const groups = Object.groupBy ? Object.groupBy(catalog, effect => effect.group || "Custom") : groupBy(catalog);
   return Object.entries(groups).map(([group, effects]) => `<section class="effect-section"><div class="section-title-row"><h2>${escapeHtml(group)}</h2><span class="field-note">${effects.length} options</span></div><div class="effect-grid">${effects.map(effect => `<article class="effect-card ${state.activeEffects.includes(effect.id) ? "is-active" : ""}"><div><strong>${escapeHtml(effect.name)}</strong><p>${escapeHtml(effect.summary)}</p>${effect.configurable || effect.custom ? `<button class="text-btn" type="button" data-config-effect="${effect.id}">Configure</button>` : ""}</div><label class="switch"><input type="checkbox" data-active-effect="${effect.id}" ${state.activeEffects.includes(effect.id) ? "checked" : ""} aria-label="Toggle ${escapeHtml(effect.name)}"><span></span></label></article>`).join("")}</div></section>`).join("");
 }
 
@@ -299,6 +312,14 @@ function spellAttack(state) { return state.character.spellAttackBonus ?? ability
 function spellSaveDC(state) { return state.character.spellSaveDC ?? 8 + abilityModifier(state.character.abilities[state.character.spellAbility]) + Number(state.character.proficiencyBonus || 0); }
 function rankLabel(rank) { return Number(rank) === 2 ? "Expert" : Number(rank) === 1 ? "Proficient" : "None"; }
 function labelRollType(type) { return type === "damage" ? "Damage" : type === "save" ? "Save + damage" : "Attack"; }
+function spellOptions(spells, selectedId, known) {
+  return spells.map(spell => `<option value="${spell.id}" ${spell.id === selectedId ? "selected" : ""}>${known ? "★ " : ""}${escapeHtml(spell.name)} · ${spell.level ? `L${spell.level}` : "Cantrip"}</option>`).join("");
+}
+function slotOptions(minimum, selected) {
+  const current = Math.max(minimum, Number(selected || minimum));
+  return Array.from({ length: 10 - minimum }, (_, index) => index + minimum)
+    .map(level => `<option value="${level}" ${level === current ? "selected" : ""}>Level ${level}</option>`).join("");
+}
 function title(value) { return String(value).replace(/(^|-)\w/g, text => text.replace("-", " ").toUpperCase()); }
 function formatTime(value) { return new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit" }).format(new Date(value)); }
 function groupBy(items) { return items.reduce((groups,item) => { (groups[item.group || "Custom"] ||= []).push(item); return groups; }, {}); }

@@ -39,3 +39,33 @@ test("global modifier search spans groups and marks wrong-context results", () =
   assert.match(markup, /is-disabled/);
   assert.match(markup, /Applies to Damage/);
 });
+
+test("spell picker prioritizes and marks an imported character spell", () => {
+  const state = createDefaultState();
+  state.roll.context = "spell";
+  state.character.name = "Mira";
+  state.character.spells = [{ id: "known-guiding-bolt", name: "Guiding Bolt", imported: true }];
+  state.roll.selectedSpellId = "known-guiding-bolt";
+  const markup = renderRollSubrail(state);
+
+  assert.match(markup, /★ Mira’s spells/);
+  assert.match(markup, /★ Guiding Bolt/);
+  assert.ok(markup.indexOf("★ Guiding Bolt") < markup.indexOf("Acid Arrow"));
+  assert.match(markup, /data-spell-phase="attack"/);
+  assert.match(markup, /data-spell-phase="damage"/);
+});
+
+test("features picker exposes a scaled Sneak Attack for an imported rogue", () => {
+  const state = createDefaultState();
+  state.roll.context = "damage";
+  state.character.imported = true;
+  state.character.level = 7;
+  state.character.classes = [{ name: "Rogue", level: 7 }];
+  const markup = renderModifierPopover(state, "features");
+
+  assert.match(markup, /Character features/);
+  assert.match(markup, /Sneak Attack/);
+  assert.match(markup, /4d6/);
+  assert.match(markup, /data-roll-effect="sneak-attack"[^>]*>/);
+  assert.doesNotMatch(markup, /data-roll-effect="sneak-attack"[^>]*disabled/);
+});

@@ -1,5 +1,5 @@
-import { ABILITIES, SKILLS } from "./rules-data.js?v=1.1.1";
-import { proficiencyForLevel, uid } from "./state.js?v=1.1.1";
+import { ABILITIES, SKILLS } from "./rules-data.js?v=1.2.0";
+import { proficiencyForLevel, uid } from "./state.js?v=1.2.0";
 
 export async function importCharacterFile(file) {
   const extension = file.name.split(".").pop()?.toLowerCase();
@@ -18,9 +18,13 @@ export function importCharacterJson(input) {
   const level = extractLevel(data);
   const scores = extractAbilityScores(data);
   const itemNames = extractInventory(data).map(item => item.definition?.name || item.name).filter(Boolean);
+  const classes = extractClasses(data);
   const character = {
     name: data.name || data.characterName || "Imported character",
     level,
+    imported: true,
+    classes,
+    featureNames: extractFeatureNames(data, classes),
     proficiencyBonus: number(data.proficiencyBonus) ?? proficiencyForLevel(level),
     abilities: scores,
     saves: extractProficiencies(data, "save"),
@@ -36,7 +40,7 @@ export function importCharacterJson(input) {
   return {
     character,
     inventoryNames: itemNames,
-    summary: `${character.weapons.length} weapon${character.weapons.length === 1 ? "" : "s"}, ${itemCount} carried item${itemCount === 1 ? "" : "s"}, and ${character.spells.length} spell${character.spells.length === 1 ? "" : "s"} found.`,
+    summary: `${classText(classes)}${character.weapons.length} weapon${character.weapons.length === 1 ? "" : "s"}, ${itemCount} carried item${itemCount === 1 ? "" : "s"}, and ${character.spells.length} spell${character.spells.length === 1 ? "" : "s"} found.`,
     warnings: character.weapons.length ? [] : ["No weapons were recognized. You can add them manually after import."]
   };
 }
@@ -56,8 +60,10 @@ export function importCharacterPdf(buffer) {
   });
   const weapons = extractPdfWeapons(lookup, visible);
   const equipment = extractEquipmentText(lookup, visible);
+  const classes = extractPdfClasses(lookup, visible, level);
   const character = {
     name, level, proficiencyBonus: plausibleBonus(findField(lookup, ["proficiencybonus", "profbonus"])) ?? proficiencyForLevel(level),
+    imported: true, classes, featureNames: extractPdfFeatureNames(lookup, visible),
     abilities,
     saves: Object.fromEntries(ABILITIES.map(a => [a.key, 0])),
     skills: Object.fromEntries(SKILLS.map(s => [s.key, 0])),
@@ -74,7 +80,7 @@ export function importCharacterPdf(buffer) {
   return {
     character,
     inventoryNames: equipment,
-    summary: `${weapons.length} weapon${weapons.length === 1 ? "" : "s"} and ${equipment.length} equipment entr${equipment.length === 1 ? "y" : "ies"} found.`,
+    summary: `${classText(classes)}${weapons.length} weapon${weapons.length === 1 ? "" : "s"} and ${equipment.length} equipment entr${equipment.length === 1 ? "y" : "ies"} found.`,
     warnings
   };
 }
@@ -114,12 +120,41 @@ function extractSpells(data) {
     const attack = spell.requiresAttackRoll || /spell attack/i.test(spell.description || "");
     return {
       id: uid(), name: spell.name || "Imported spell",
+      source: "character", imported: true, level: number(spell.level ?? spell.levelNumber ?? spell.definition?.level),
       rollType: attack ? "attack" : save ? "save" : damage ? "damage" : "attack",
       damage: damage || "1d8", damageBonus: 0,
       damageType: spell.damageType || spell.damage?.damageType || "Spell damage",
       attackBonus: number(spell.attackBonus), saveDC: number(spell.saveDC || spell.dc)
     };
   }), spell => spell.name.toLowerCase());
+}
+
+function extractClasses(data) {
+  const values = Array.isArray(data.classes) ? data.classes : data.class ? [data.class] : [];
+  const classes = values.map(entry => {
+    if (typeof entry === "string") return { name: entry, level: number(data.level) || 1 };
+    return {
+      name: entry.definition?.name || entry.classDefinition?.name || entry.name || entry.className || "Unknown class",
+      level: number(entry.level ?? entry.classLevel) || 1
+    };
+  });
+  if (!classes.length && data.className) classes.push({ name: data.className, level: number(data.level) || 1 });
+  return classes.filter(entry => entry.name !== "Unknown class");
+}
+
+function extractFeatureNames(data, classes) {
+  const sources = [data.features, data.classFeatures, data.actions?.class, data.actions?.race, data.actions?.feat,
+    ...classes.flatMap((_, index) => data.classes?.[index]?.classFeatures || [])];
+  return dedupe(sources.flatMap(value => flattenEntries(value)).map(entry => {
+    if (typeof entry === "string") return entry;
+    return entry?.definition?.name || entry?.name || entry?.label;
+  }).filter(Boolean), name => name.toLowerCase());
+}
+
+function flattenEntries(value) {
+  if (Array.isArray(value)) return value.flatMap(flattenEntries);
+  if (value && typeof value === "object" && !value.name && !value.definition?.name) return Object.values(value).flatMap(flattenEntries);
+  return value ? [value] : [];
 }
 
 function extractInventory(data) {
@@ -171,7 +206,9 @@ function extractLevel(data) {
 }
 
 function extractSpellAbility(data) {
-  const id = data.spellCastingAbilityId ?? data.spellcastingAbilityId;
+  const classEntry = (data.classes || []).find(entry => entry.spellCastingAbilityId || entry.definition?.spellCastingAbilityId || entry.subclassDefinition?.spellCastingAbilityId);
+  const id = data.spellCastingAbilityId ?? data.spellcastingAbilityId ?? classEntry?.spellCastingAbilityId
+    ?? classEntry?.definition?.spellCastingAbilityId ?? classEntry?.subclassDefinition?.spellCastingAbilityId;
   if (id) return ABILITIES[Number(id) - 1]?.key || "wis";
   return normalizeAbility(data.spellAbility || data.spellcastingAbility || "wis");
 }
@@ -242,10 +279,34 @@ function extractPdfWeapons(lookup, visible) {
   return dedupe(weapons, weapon => weapon.name.toLowerCase());
 }
 
+function extractPdfClasses(lookup, visible, totalLevel) {
+  const field = findField(lookup, ["classlevel", "classandlevel", "class", "classes"])
+    || visible.find(value => /\b(barbarian|bard|cleric|druid|fighter|monk|paladin|ranger|rogue|sorcerer|warlock|wizard)\b/i.test(value));
+  if (!field) return [];
+  const matches = [...String(field).matchAll(/\b(barbarian|bard|cleric|druid|fighter|monk|paladin|ranger|rogue|sorcerer|warlock|wizard)\b\s*(\d{1,2})?/gi)];
+  return matches.map((match, index) => ({
+    name: title(match[1]),
+    level: Number(match[2] || (matches.length === 1 ? totalLevel : index === 0 ? totalLevel : 1))
+  }));
+}
+
+function extractPdfFeatureNames(lookup, visible) {
+  const field = findField(lookup, ["featuresandtraits", "features traits", "classfeatures"]);
+  const text = [field, ...visible].filter(Boolean).join(" \n ");
+  const known = ["Sneak Attack", "Rage", "Bardic Inspiration", "Divine Smite", "Improved Divine Smite",
+    "Radiant Strikes", "Colossus Slayer", "Dread Ambusher", "Giant's Might", "Gathered Swarm",
+    "Psychic Blades", "Divine Strike", "Brutal Strike", "Agonizing Blast"];
+  return known.filter(name => text.toLowerCase().includes(name.toLowerCase()));
+}
+
 function extractEquipmentText(lookup, visible) {
   const field = findField(lookup, ["equipment", "equipmentlist", "otherpossessions"]);
   const values = (field ? field.split(/[\n,;]+/) : visible.filter(value => /equipment|inventory/i.test(value))).map(v => v.trim()).filter(v => v.length > 1 && v.length < 90);
   return [...new Set(values)].slice(0, 50);
+}
+
+function classText(classes) {
+  return classes.length ? `${classes.map(entry => `${entry.name} ${entry.level}`).join(" / ")} · ` : "";
 }
 
 function findNamedLine(values, word) { return values.find(value => value.toLowerCase().includes(word) && value.length < 60); }

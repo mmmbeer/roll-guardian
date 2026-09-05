@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { importCharacterJson } from "../dist/js/importer.js";
+import { characterFeatureEffects } from "../dist/js/character-features.js";
 import { buildRollPlan, executeRoll, parseNotation, rollDie } from "../dist/js/roll-engine.js";
+import { availableSpells, spellDamage, spellsForRuleset } from "../dist/js/spell-data.js";
 import { createDefaultState } from "../dist/js/state.js";
 
 test("parses mixed dice and flat modifiers", () => {
@@ -66,7 +68,7 @@ test("secure die results stay within bounds", () => {
 
 test("imports common D&D Beyond JSON structures", () => {
   const imported = importCharacterJson({ data: {
-    name: "Mira", classes: [{ level: 7 }], stats: [
+    name: "Mira", classes: [{ level: 7, definition: { name: "Rogue" }, classFeatures: [{ definition: { name: "Sneak Attack" } }] }], stats: [
       { id: 1, value: 8 }, { id: 2, value: 18 }, { id: 3, value: 14 },
       { id: 4, value: 12 }, { id: 5, value: 13 }, { id: 6, value: 10 }
     ],
@@ -78,4 +80,57 @@ test("imports common D&D Beyond JSON structures", () => {
   assert.equal(imported.character.abilities.dex, 18);
   assert.equal(imported.character.weapons[0].name, "Rapier");
   assert.equal(imported.character.spells[0].name, "Fire Bolt");
+  assert.deepEqual(imported.character.classes, [{ name: "Rogue", level: 7 }]);
+  assert.ok(imported.character.featureNames.includes("Sneak Attack"));
+  assert.equal(imported.character.spells[0].imported, true);
+});
+
+test("builds level-aware roll features for an imported rogue", () => {
+  const state = createDefaultState();
+  state.character = { ...state.character, imported: true, level: 7, classes: [{ name: "Rogue", level: 7 }], featureNames: [] };
+  const sneakAttack = characterFeatureEffects(state.character, "2024").find(feature => feature.id === "sneak-attack");
+  assert.equal(sneakAttack.entries[0].notation, "4d6");
+  state.roll.context = "damage";
+  state.roll.selectedEffects = ["sneak-attack"];
+  assert.deepEqual(buildRollPlan(state).dice.map(die => die.sides), [8, 6, 6, 6, 6]);
+  state.roll.context = "spell";
+  state.roll.selectedSpellId = "srd-2024-fireball";
+  state.roll.spellPhase = "damage";
+  assert.equal(buildRollPlan(state).effects.some(effect => effect.id === "sneak-attack"), false);
+});
+
+test("provides complete rollable SRD spell catalogs", () => {
+  assert.ok(spellsForRuleset("2014").length >= 65);
+  assert.ok(spellsForRuleset("2024").length >= 100);
+  assert.ok(spellsForRuleset("2024").some(spell => spell.name === "Sorcerous Burst"));
+  assert.ok(spellsForRuleset("2014").some(spell => spell.name === "Delayed Blast Fireball"));
+});
+
+test("sorts imported character spells before the SRD library", () => {
+  const state = createDefaultState();
+  state.character.spells = [{ id: "known-fireball", name: "Fireball", imported: true }];
+  const spells = availableSpells(state);
+  assert.equal(spells.known[0].name, "Fireball");
+  assert.equal(spells.known[0].known, true);
+  assert.equal(spells.library.some(spell => spell.name === "Fireball"), false);
+});
+
+test("scales SRD cantrips and common upcast damage", () => {
+  const fireBolt = spellsForRuleset("2024").find(spell => spell.name === "Fire Bolt");
+  const fireball = spellsForRuleset("2024").find(spell => spell.name === "Fireball");
+  assert.equal(spellDamage(fireBolt, 11, 0).notation, "3d10");
+  assert.equal(spellDamage(fireball, 8, 5).notation, "8d6 + 1d6 + 1d6");
+});
+
+test("switches an SRD spell between its attack and damage rolls", () => {
+  const state = createDefaultState();
+  const guidingBolt = spellsForRuleset("2024").find(spell => spell.name === "Guiding Bolt");
+  state.roll.context = "spell";
+  state.roll.selectedSpellId = guidingBolt.id;
+  state.roll.spellPhase = "attack";
+  assert.equal(buildRollPlan(state).base.attackRoll, true);
+  state.roll.spellPhase = "damage";
+  const damagePlan = buildRollPlan(state);
+  assert.equal(damagePlan.base.damageRoll, true);
+  assert.deepEqual(damagePlan.dice.map(die => die.sides), [6, 6, 6, 6]);
 });

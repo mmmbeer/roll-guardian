@@ -1,5 +1,7 @@
-import { EFFECT_PRESETS, SKILLS } from "./rules-data.js?v=1.1.1";
-import { abilityModifier } from "./state.js?v=1.1.1";
+import { EFFECT_PRESETS, SKILLS } from "./rules-data.js?v=1.2.0";
+import { characterFeatureEffects } from "./character-features.js?v=1.2.0";
+import { selectedSpell, spellDamage } from "./spell-data.js?v=1.2.0";
+import { abilityModifier } from "./state.js?v=1.2.0";
 
 const DIE_RE = /([+-]?)(\d*)d(\d+)|([+-]?\d+)/gi;
 
@@ -38,7 +40,8 @@ export function buildRollPlan(state) {
   const context = state.roll.context;
   const character = state.character;
   const base = baseForContext(state);
-  const effects = getApplicableEffects(state, context);
+  const effectContexts = effectContextsForRoll(state, base);
+  const effects = getApplicableEffects(state, effectContexts);
   const modeEntries = effects.flatMap(e => e.entries).filter(e => e.kind === "mode");
   const hasAdvantage = modeEntries.some(e => e.mode === "advantage");
   const hasDisadvantage = modeEntries.some(e => e.mode === "disadvantage");
@@ -53,7 +56,7 @@ export function buildRollPlan(state) {
   const effectDice = dieEffects.flatMap(e => parseNotation(resolveConfiguredNotation(state, e)).dice.map(d => ({ ...d, label: e.label })));
   const d20Dice = base.isD20 ? Array.from({ length: mode === "normal" ? 1 : 2 }, () => ({ sides: 20, sign: 1, d20: true })) : [];
   const normalDice = base.isD20 ? [...d20Dice, ...effectDice] : [...baseDice.dice, ...effectDice];
-  const dice = context === "damage" && state.roll.critical
+  const dice = base.damageRoll && state.roll.critical
     ? [...normalDice, ...normalDice.map(die => ({ ...die, critical: true }))]
     : normalDice;
   const baseFlat = base.isD20 ? Number(base.modifier || 0) : baseDice.flat + Number(base.modifier || 0);
@@ -61,10 +64,10 @@ export function buildRollPlan(state) {
   const targetAC = Number(state.roll.targetAC || 0) || null;
   const effectiveAC = targetAC ? targetAC + targetACBonus : null;
   return {
-    context, label: base.label, sublabel: base.sublabel, base, effects, mode, automaticMode,
+    context, effectContexts, label: base.label, sublabel: base.sublabel, base, effects, mode, automaticMode,
     dice, flat, dieEffects, flatEffects, multipliers, targetAC, effectiveAC,
     notation: formatPlanNotation(dice, flat, mode),
-    formula: buildFormula(base, effects, mode, flat, effectiveAC, state.roll.critical)
+    formula: buildFormula(base, effects, mode, flat, effectiveAC, base.damageRoll && state.roll.critical)
   };
 }
 
@@ -89,26 +92,34 @@ export function executeRoll(plan) {
   const total = multiplier === 0.5 ? Math.floor(raw / 2) : Math.floor(raw * multiplier);
   const naturalCritical = plan.base.isD20 && d20Value === 20;
   const naturalOne = plan.base.isD20 && d20Value === 1;
-  const hit = plan.context === "attack" && plan.effectiveAC
+  const hit = plan.base.attackRoll && plan.effectiveAC
     ? (naturalCritical ? true : naturalOne ? false : total >= plan.effectiveAC)
     : null;
   return { results, usedResults, raw, total, multiplier, d20Value, discarded, naturalCritical, naturalOne, hit };
 }
 
 export function effectCatalog(state) {
-  return [...EFFECT_PRESETS, ...(state.customEffects || [])];
+  const all = [...EFFECT_PRESETS, ...(state.customEffects || []), ...characterFeatureEffects(state.character, state.ruleset)];
+  return [...new Map(all.map(effect => [effect.id, effect])).values()];
 }
 
-export function getApplicableEffects(state, context) {
+export function getApplicableEffects(state, contexts) {
+  const applicableContexts = Array.isArray(contexts) ? contexts : [contexts];
   const active = new Set([...(state.activeEffects || []), ...(state.roll.selectedEffects || [])]);
   return effectCatalog(state)
     .filter(effect => effect.rulesets?.includes?.(state.ruleset) || effect.rulesets?.includes?.("all"))
+    .filter(effect => effectMatchesRollScope(state, effect))
     .filter(effect => active.has(effect.id))
     .map(effect => ({
       ...effect,
-      entries: (effect.entries || []).filter(entry => entry.contexts.includes(context)).map(entry => configuredEntry(state, effect, entry))
+      entries: (effect.entries || []).filter(entry => entry.contexts.some(context => applicableContexts.includes(context))).map(entry => configuredEntry(state, effect, entry))
     }))
     .filter(effect => effect.entries.length);
+}
+
+export function effectMatchesRollScope(state, effect) {
+  if (!effect.rollScope) return true;
+  return effect.rollScope === "spell" ? state.roll.context === "spell" : state.roll.context !== "spell";
 }
 
 export function baseForContext(state) {
@@ -120,10 +131,10 @@ export function baseForContext(state) {
     const ability = abilityModifier(c.abilities[weapon.ability] ?? 10);
     if (context === "attack") {
       const calculated = ability + (weapon.proficient ? Number(c.proficiencyBonus || 0) : 0) + Number(weapon.attackBonus || 0);
-      return { label: weapon.name, sublabel: "Weapon attack", notation: "1d20", modifier: calculated, isD20: true, parts: [ability, weapon.proficient ? c.proficiencyBonus : 0, weapon.attackBonus || 0] };
+      return { label: weapon.name, sublabel: "Weapon attack", notation: "1d20", modifier: calculated, isD20: true, attackRoll: true, parts: [ability, weapon.proficient ? c.proficiencyBonus : 0, weapon.attackBonus || 0] };
     }
     const mod = (weapon.damageAbility === false ? 0 : ability) + Number(weapon.damageBonus || 0);
-    return { label: weapon.name, sublabel: `${weapon.damageType || "Damage"} damage`, notation: weapon.damage || "1d4", modifier: mod, isD20: false };
+    return { label: weapon.name, sublabel: `${weapon.damageType || "Damage"} damage`, notation: weapon.damage || "1d4", modifier: mod, isD20: false, damageRoll: true };
   }
   if (context === "skill") {
     const skill = SKILLS.find(s => s.key === state.roll.selectedSkill) || SKILLS[0];
@@ -138,15 +149,28 @@ export function baseForContext(state) {
     return { label: `${ability.toUpperCase()} saving throw`, sublabel: rank ? "Proficient" : "Not proficient", notation: "1d20", modifier, isD20: true };
   }
   if (context === "spell") {
-    const spell = c.spells.find(s => s.id === state.roll.selectedSpellId) || c.spells[0];
+    const spell = selectedSpell(state);
     const ability = c.spellAbility || "wis";
     const calculated = c.spellAttackBonus ?? (abilityModifier(c.abilities[ability]) + Number(c.proficiencyBonus || 0));
-    if (spell?.rollType === "damage") return { label: spell.name, sublabel: spell.damageType || "Spell damage", notation: spell.damage || "1d10", modifier: Number(spell.damageBonus || 0), isD20: false };
     const defaultSaveDC = 8 + abilityModifier(c.abilities[ability]) + Number(c.proficiencyBonus || 0);
-    if (spell?.rollType === "save") return { label: spell.name, sublabel: `Target saves vs. DC ${spell.saveDC || c.spellSaveDC || defaultSaveDC}`, notation: spell.damage || "1d8", modifier: Number(spell.damageBonus || 0), isD20: false };
-    return { label: spell?.name || "Spell attack", sublabel: "Spell attack roll", notation: "1d20", modifier: Number(spell?.attackBonus ?? calculated), isD20: true };
+    const useAttack = spell?.attack && state.roll.spellPhase !== "damage";
+    if (useAttack || !spell?.damages?.length) {
+      return { label: spell?.name || "Spell attack", sublabel: "Spell attack roll", notation: "1d20",
+        modifier: Number(spell?.attackBonus ?? calculated), isD20: true, attackRoll: true };
+    }
+    const damage = spellDamage(spell, c.level, state.roll.spellSlotLevel, state.roll.spellDamageIndex);
+    const saveDC = spell?.saveDC || c.spellSaveDC || defaultSaveDC;
+    const saveText = spell?.saveAbility ? ` · ${spell.saveAbility.toUpperCase()} save DC ${saveDC}` : "";
+    const damageModifier = Number(spell?.damageBonus || 0) + (damage.addAbility ? abilityModifier(c.abilities[ability]) : 0);
+    return { label: spell?.name || "Spell damage", sublabel: `${damage.damageType || "Spell"} damage${saveText}`,
+      notation: damage.notation || "1d8", modifier: damageModifier, isD20: false, damageRoll: true };
   }
   return { label: state.roll.customLabel || "Custom roll", sublabel: "Custom dice", notation: state.roll.customNotation || "1d20", modifier: 0, isD20: false };
+}
+
+export function effectContextsForRoll(state, base = baseForContext(state)) {
+  if (state.roll.context !== "spell") return [state.roll.context];
+  return ["spell", base.attackRoll ? "attack" : "damage"];
 }
 
 function resolveConfiguredNotation(state, entry) {
