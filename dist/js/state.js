@@ -1,4 +1,4 @@
-import { ABILITIES, SKILLS } from "./rules-data.js?v=1.2.0";
+import { ABILITIES, SKILLS } from "./rules-data.js?v=1.3.0";
 
 const STORAGE_KEY = "whatDoIRoll.v1";
 
@@ -38,6 +38,7 @@ export function createDefaultState() {
       context: "attack",
       modeOverride: null,
       selectedWeaponId: null,
+      attackMode: "auto",
       selectedSpellId: null,
       spellPhase: "damage",
       spellSlotLevel: 1,

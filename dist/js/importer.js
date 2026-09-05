@@ -1,5 +1,5 @@
-import { ABILITIES, SKILLS } from "./rules-data.js?v=1.2.0";
-import { proficiencyForLevel, uid } from "./state.js?v=1.2.0";
+import { ABILITIES, SKILLS } from "./rules-data.js?v=1.3.0";
+import { proficiencyForLevel, uid } from "./state.js?v=1.3.0";
 
 export async function importCharacterFile(file) {
   const extension = file.name.split(".").pop()?.toLowerCase();

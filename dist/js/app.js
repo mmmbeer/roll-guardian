@@ -1,21 +1,22 @@
-import { createDiceTray, playDiceSound } from "./dice-3d.js?v=1.2.0";
-import { importCharacterFile } from "./importer.js?v=1.2.0";
-import { buildRollPlan, effectCatalog, executeRoll } from "./roll-engine.js?v=1.2.0";
-import { createDefaultState, loadState, proficiencyForLevel, saveState, uid } from "./state.js?v=1.2.0";
-import { selectedSpell } from "./spell-data.js?v=1.2.0";
+import { createDiceTray, playDiceSound } from "./dice-3d.js?v=1.3.0";
+import { importCharacterFile } from "./importer.js?v=1.3.0";
+import { buildRollPlan, effectCatalog, executeRoll, rerollOutcome } from "./roll-engine.js?v=1.3.0";
+import { DAMAGE_TYPES } from "./rules-data.js?v=1.3.0";
+import { createDefaultState, loadState, proficiencyForLevel, saveState, uid } from "./state.js?v=1.3.0";
+import { selectedSpell } from "./spell-data.js?v=1.3.0";
 import {
   $, $$, closeModal, effectForm, escapeHtml, helpContent, importModal, modalButtons,
   modifierCategoryLabel, openModal, renderAppliedModifiers, renderCharacter,
   renderDiceLoadout, renderEffects, renderHistory, renderModifierPopover,
   renderRollSubrail, rollFamily, signed, spellForm, toast, weaponForm
-} from "./ui.js?v=1.2.0";
-
+} from "./ui.js?v=1.3.0";
 let state = loadState();
 let modalAction = null;
 let pendingImport = null;
 let modifierPicker = null;
+let lastRoll = null;
+let lastRollHistoryId = null;
 const tray = createDiceTray($("#diceCanvas"));
-
 renderAll();
 bindEvents();
 
@@ -31,7 +32,6 @@ function renderAll() {
   refreshModifierPicker();
   saveState(state);
 }
-
 function renderNavigation() {
   document.body.dataset.view = state.view;
   $$("[data-view]").forEach(view => view.classList.toggle("is-active", view.dataset.view === state.view));
@@ -54,6 +54,7 @@ function updateRollSummary() {
   $("#rollButtonHint").textContent = plan.label;
   $("#modeButton").textContent = title(plan.mode);
   $("#modeButton").hidden = !plan.base.isD20;
+  $("#rollButton").disabled = plan.blocked || plan.automaticFailure;
   $("#dicePreview").innerHTML = renderDiceLoadout(state, plan);
   $("#soundToggle").setAttribute("aria-pressed", String(state.sound));
 }
@@ -94,7 +95,9 @@ function handleClick(event) {
   const context = event.target.closest("[data-context]");
   if (context) { selectContext(context.dataset.context); return; }
   const weapon = event.target.closest("[data-select-weapon]");
-  if (weapon) { state.roll.selectedWeaponId = weapon.dataset.selectWeapon; resetPlatform(); renderRoll(); saveState(state); return; }
+  if (weapon) { state.roll.selectedWeaponId = weapon.dataset.selectWeapon; state.roll.attackMode = "auto"; resetPlatform(); renderRoll(); saveState(state); return; }
+  const attackMode = event.target.closest("[data-attack-mode]");
+  if (attackMode) { state.roll.attackMode = attackMode.dataset.attackMode; resetPlatform(); renderRoll(); saveState(state); return; }
   const spell = event.target.closest("[data-select-spell]");
   if (spell) { state.roll.selectedSpellId = spell.dataset.selectSpell; resetSpellChoices(); resetPlatform(); renderRoll(); saveState(state); return; }
   const spellPhase = event.target.closest("[data-spell-phase]");
@@ -109,6 +112,9 @@ function handleClick(event) {
   if (mode) { state.roll.modeOverride = mode.dataset.mode; closeModifierPicker(); resetPlatform(); renderRoll(); saveState(state); return; }
   if (event.target.closest("[data-close-modal]")) { closeModal(); return; }
   if (event.target.closest("#rollButton")) { runRoll(); return; }
+  if (event.target.closest('[data-action="reroll-result"]')) { openRerollDialog(); return; }
+  const rerollDieButton = event.target.closest("[data-reroll-index]");
+  if (rerollDieButton) { performReroll(Number(rerollDieButton.dataset.rerollIndex)); return; }
   if (event.target.closest("#resetRoll")) { resetRoll(); return; }
   if (event.target.closest("#helpButton")) { openModal("How to use this", helpContent(state), '<button class="modal-button primary" type="button" data-close-modal>Done</button>'); return; }
   if (event.target.closest("#openImport")) { openImportDialog(); return; }
@@ -195,6 +201,7 @@ function handleInput(event) {
 function runRoll() {
   if (tray.running) return;
   const plan = buildRollPlan(state);
+  if (plan.blocked || plan.automaticFailure) { toast(plan.blocked ? "The target has total cover; no roll can be made." : "This saving throw fails automatically."); return; }
   if (!plan.dice.length) { toast("Enter valid dice notation first."); return; }
   const outcome = executeRoll(plan);
   $("#dicePreview").hidden = true;
@@ -207,23 +214,61 @@ function runRoll() {
 
 function finishRoll(plan, outcome) {
   const detail = resultDetail(plan, outcome);
-  $("#rollResult").innerHTML = `<strong>${outcome.total}</strong><span>${escapeHtml(detail)}</span>`;
+  const canReroll = plan.rerollChoices.length && outcome.rerollsUsed < Math.max(...plan.rerollChoices.map(entry => Number(entry.value || 1)));
+  const total = outcome.blocked || outcome.automaticFailure ? "—" : outcome.total;
+  $("#rollResult").innerHTML = `<strong>${total}</strong><span>${escapeHtml(detail)}</span>${canReroll ? '<button class="reroll-result" type="button" data-action="reroll-result">Reroll one die</button>' : ""}`;
   $("#rollResult").hidden = false;
   $("#rollButton").disabled = false;
-  state.history.unshift({ id: uid(), at: new Date().toISOString(), context: plan.context, label: plan.label, notation: plan.notation, total: outcome.total, detail });
+  lastRoll = { plan, outcome };
+  if (outcome.rerollsUsed && state.history[0]?.id === lastRollHistoryId) {
+    Object.assign(state.history[0], { total: outcome.total, detail, notation: `${plan.notation} · rerolled` });
+  } else {
+    const entry = { id: uid(), at: new Date().toISOString(), context: plan.context, label: plan.label, notation: plan.notation, total: outcome.total, detail };
+    lastRollHistoryId = entry.id;
+    state.history.unshift(entry);
+  }
   state.history = state.history.slice(0, 60);
   $("#historyList").innerHTML = renderHistory(state);
   saveState(state);
 }
 
 function resultDetail(plan, outcome) {
-  const dice = outcome.usedResults.map(die => `${die.sign < 0 ? "−" : ""}${die.value}`).join(" + ");
-  const parts = [dice, plan.flat ? signed(plan.flat) : ""].filter(Boolean).join(" ");
-  if (plan.base.attackRoll && plan.effectiveAC) return `${outcome.hit ? "Hit" : "Miss"} vs. AC ${plan.effectiveAC} · ${parts}${outcome.discarded ? ` · discarded ${outcome.discarded}` : ""}`;
-  if (outcome.naturalCritical) return `Natural 20 · ${parts}`;
+  if (outcome.blocked) return "No roll: the target has total cover";
+  if (outcome.automaticFailure) return "Automatic failure";
+  const dice = outcome.usedResults.map(die => {
+    const applied = die.d20 ? outcome.d20Applied : die.calculatedValue;
+    return `${die.sign < 0 ? "−" : ""}${die.value}${applied > die.value ? `→${applied}` : ""}`;
+  }).join(" + ");
+  const shownFlat = plan.flat + Number(outcome.rerollBonus || 0);
+  const parts = [dice, shownFlat ? signed(shownFlat) : ""].filter(Boolean).join(" ");
+  if (plan.base.attackRoll && plan.effectiveAC) return `${outcome.criticalHit ? "Critical hit" : outcome.hit ? "Hit" : "Miss"} vs. AC ${plan.effectiveAC} · ${parts}${outcome.discarded ? ` · discarded ${outcome.discarded}` : ""}`;
+  if (outcome.naturalCritical) return `${outcome.d20Value === 20 ? "Natural 20" : `Critical on ${outcome.d20Value}`} · ${parts}`;
+  if (outcome.criticalHit) return `Critical on hit · ${parts}`;
   if (outcome.naturalOne) return `Natural 1 · ${parts}`;
+  if (outcome.damageBreakdown.length > 1) return outcome.damageBreakdown.map(item => `${item.total} ${item.damageType}${item.multiplier !== 1 ? ` (×${item.multiplier})` : ""}`).join(" + ");
   if (outcome.multiplier !== 1) return `${parts} · ${outcome.raw} × ${outcome.multiplier}`;
+  if (outcome.alternateDiscarded != null) return `${parts} · discarded damage roll ${outcome.alternateDiscarded}`;
   return parts;
+}
+
+function openRerollDialog() {
+  if (!lastRoll) return;
+  const { plan, outcome } = lastRoll;
+  const choices = outcome.results.map((result, index) => ({ result, index }))
+    .filter(({ result }) => !result.originalValue && !result.rerolledByChoice && plan.rerollChoices.some(entry => !entry.scope || entry.scope === "d20" && result.d20 || entry.scope === "baseDamage" && result.source === "base"));
+  const body = choices.map(({ result, index }) => `<button class="reroll-choice" type="button" data-reroll-index="${index}"><span>${escapeHtml(result.label || (result.d20 ? "d20" : `d${result.sides}`))}</span><strong>${result.value}</strong></button>`).join("");
+  openModal("Choose a die to reroll", `<div class="reroll-grid">${body}</div><p class="field-note">The new result must be used.</p>`, '<button class="modal-button" type="button" data-close-modal>Cancel</button>');
+}
+
+function performReroll(resultIndex) {
+  if (!lastRoll || tray.running) return;
+  const { plan, outcome } = lastRoll;
+  const next = rerollOutcome(plan, outcome, resultIndex);
+  closeModal();
+  $("#rollResult").hidden = true;
+  $("#rollButton").disabled = true;
+  playDiceSound(state.sound);
+  tray.roll(next.results, { usedResults: next.usedResults, onDone: () => finishRoll(plan, next) });
 }
 
 function resetRoll() {
@@ -329,9 +374,14 @@ function openEffectEditor(effect = null) {
     if (!contexts.length) { toast("Choose at least one roll context."); return; }
     const kindChoice = data.get("kind");
     const entry = { contexts, label: data.get("name").trim() };
+    const damageType = data.get("damageType") || "same";
     if (["advantage","disadvantage"].includes(kindChoice)) Object.assign(entry, { kind: "mode", mode: kindChoice });
-    else if (kindChoice === "die") Object.assign(entry, { kind: "die", notation: data.get("value") || "1d4" });
-    else Object.assign(entry, { kind: kindChoice, value: Number(data.get("value") || 0) });
+    else if (kindChoice === "die") Object.assign(entry, { kind: "die", notation: data.get("value") || "1d4", damageType });
+    else if (kindChoice === "rerollValues") Object.assign(entry, { kind: kindChoice, values: String(data.get("value") || "1").split(",").map(Number).filter(Number.isFinite) });
+    else if (["rerollChoice", "rollTwice", "criticalOnHit", "criticalDamage", "missToHit", "automaticFailure", "blocked", "proficiency", "halfProficiency"].includes(kindChoice)) Object.assign(entry, { kind: kindChoice, value: kindChoice === "rerollChoice" ? 1 : undefined });
+    else if (kindChoice === "ignoreResistance") Object.assign(entry, { kind: kindChoice, damageTypes: [damageType] });
+    else Object.assign(entry, { kind: kindChoice, value: Number(data.get("value") || 0), damageType });
+    if (["rerollValues", "dieFloor", "rollTwice"].includes(kindChoice)) entry.scope = contexts.includes("damage") ? "baseDamage" : "d20";
     const value = { id: effect?.id || uid(), name: data.get("name").trim(), group: "Custom", summary: data.get("summary").trim() || "Custom modifier", rulesets: ["all"], entries: [entry], custom: true };
     if (effect) Object.assign(effect, value); else state.customEffects.push(value);
     toggleArray(state.roll.selectedEffects, value.id, true); closeModal(); renderAll(); toast(effect ? "Modifier updated" : "Modifier added to this roll");
@@ -341,7 +391,16 @@ function openEffectEditor(effect = null) {
 function openEffectConfiguration(id) {
   const effect = effectCatalog(state).find(item => item.id === id);
   if (effect?.custom) { openEffectEditor(effect); return; }
-  const entry = effect?.entries?.find(item => ["die","flat","proficiency"].includes(item.kind));
+  if (effect?.configurable === "damageType") {
+    const currentType = state.effectConfig?.[id]?.damageType || buildRollPlan(state).base.damageType || DAMAGE_TYPES[0];
+    openModal(`Configure ${effect.name}`, `<form id="configEffectForm" class="form-stack"><label class="field"><span class="field-label">Damage type</span><select name="damageType">${DAMAGE_TYPES.map(type => `<option value="${type}" ${type === currentType ? "selected" : ""}>${type}</option>`).join("")}</select></label></form>`, modalButtons("Save"));
+    modalAction = () => {
+      state.effectConfig[id] = { damageType: new FormData($("#configEffectForm")).get("damageType") };
+      closeModal(); renderAll();
+    };
+    return;
+  }
+  const entry = effect?.entries?.find(item => ["die","flat","proficiency","rerollChoice","criticalRange","damageThreshold","saveDC"].includes(item.kind));
   const current = state.effectConfig?.[id]?.notation || entry?.notation || entry?.value || state.character.proficiencyBonus;
   openModal(`Configure ${effect?.name || "effect"}`, `<form id="configEffectForm" class="form-stack"><label class="field"><span class="field-label">Dice or value</span><input name="value" value="${escapeHtml(current)}" required><span class="field-note">Examples: 1d6, 3d6, +2, or −4.</span></label></form>`, modalButtons("Save"));
   modalAction = () => {
@@ -378,7 +437,7 @@ async function parseCharacterImport(file) {
 }
 
 function fillWeaponForm(index) {
-  import("./rules-data.js?v=1.2.0").then(({ WEAPON_LIBRARY }) => {
+  import("./rules-data.js?v=1.3.0").then(({ WEAPON_LIBRARY }) => {
     const weapon = WEAPON_LIBRARY[index]; const form = $("#weaponForm"); if (!weapon || !form) return;
     ["name","ability","damage","damageType","properties"].forEach(key => { form.elements[key].value = weapon[key]; });
   });

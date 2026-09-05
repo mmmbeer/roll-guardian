@@ -1,8 +1,8 @@
-import { ABILITIES, DAMAGE_TYPES, SKILLS, WEAPON_LIBRARY } from "./rules-data.js?v=1.2.0";
-import { classSummary } from "./character-features.js?v=1.2.0";
-import { availableSpells, selectedSpell, spellDamage } from "./spell-data.js?v=1.2.0";
-import { abilityModifier } from "./state.js?v=1.2.0";
-import { effectCatalog, effectContextsForRoll, effectMatchesRollScope, getApplicableEffects } from "./roll-engine.js?v=1.2.0";
+import { ABILITIES, CHECKS, DAMAGE_TYPES, SKILLS, WEAPON_LIBRARY } from "./rules-data.js?v=1.3.0";
+import { classSummary } from "./character-features.js?v=1.3.0";
+import { availableSpells, selectedSpell, spellDamage } from "./spell-data.js?v=1.3.0";
+import { abilityModifier } from "./state.js?v=1.3.0";
+import { effectCatalog, effectContextsForRoll, effectMatchesRollScope, entryMatchesRoll, getApplicableEffects } from "./roll-engine.js?v=1.3.0";
 
 export const $ = selector => document.querySelector(selector);
 export const $$ = selector => [...document.querySelectorAll(selector)];
@@ -33,7 +33,7 @@ export function renderContextFields(state) {
     </div>`;
   }
   if (context === "skill") {
-    return `<div class="field-grid"><label class="field span-2"><span class="field-label">Skill or check</span><select data-roll-field="selectedSkill">${SKILLS.map(skill => `<option value="${skill.key}" ${skill.key === state.roll.selectedSkill ? "selected" : ""}>${skill.label} · ${skill.ability.toUpperCase()} ${signed(skillModifier(state, skill))}</option>`).join("")}</select></label></div>`;
+    return `<div class="field-grid"><label class="field span-2"><span class="field-label">Skill or check</span><select data-roll-field="selectedSkill">${CHECKS.map(check => `<option value="${check.key}" ${check.key === state.roll.selectedSkill ? "selected" : ""}>${check.label} · ${check.ability.toUpperCase()} ${signed(checkModifier(state, check))}</option>`).join("")}</select></label></div>`;
   }
   if (context === "save") {
     return `<div class="field-grid"><label class="field span-2"><span class="field-label">Saving throw</span><select data-roll-field="selectedSave">${ABILITIES.map(ability => `<option value="${ability.key}" ${ability.key === state.roll.selectedSave ? "selected" : ""}>${ability.label} ${signed(saveModifier(state, ability.key))}</option>`).join("")}</select></label></div>`;
@@ -52,10 +52,10 @@ export function renderContextFields(state) {
 }
 
 const MODIFIER_CATEGORIES = {
-  conditions: { label: "Conditions", groups: ["Your conditions", "Target conditions"] },
+  conditions: { label: "Conditions", groups: ["Your conditions", "Target conditions", "Your defenses"] },
   support: { label: "Support & spells", groups: ["Spells & support", "Damage riders"] },
-  combat: { label: "Combat modifiers", groups: ["Equipment & styles", "Target defenses", "Weapon mastery"] },
-  features: { label: "Features", groups: ["Character features", "Feats", "Custom"] }
+  combat: { label: "Combat modifiers", groups: ["Situational", "Equipment & styles", "Target defenses", "Weapon mastery", "Magic items"] },
+  features: { label: "Features", groups: ["Character features", "Class features", "Species traits", "Feats", "Custom"] }
 };
 
 export function rollFamily(context) {
@@ -72,11 +72,13 @@ export function renderRollSubrail(state) {
   const family = rollFamily(state.roll.context);
   const c = state.character;
   if (family === "weapon") {
+    const selectedWeapon = c.weapons.find(weapon => weapon.id === state.roll.selectedWeaponId) || c.weapons[0];
     const weaponOptions = c.weapons.map(weapon => `<button class="option-chip ${weapon.id === state.roll.selectedWeaponId ? "is-active" : ""}" type="button" data-select-weapon="${weapon.id}">${escapeHtml(weapon.name)}</button>`).join("");
+    const attackMode = /thrown/i.test(selectedWeapon?.properties || "") ? `<span class="subcontext-divider"></span><span class="subcontext-label">Use</span><button class="option-chip ${state.roll.attackMode !== "ranged" ? "is-active" : ""}" type="button" data-attack-mode="melee">Melee</button><button class="option-chip ${state.roll.attackMode === "ranged" ? "is-active" : ""}" type="button" data-attack-mode="ranged">Thrown</button>` : "";
     const contextual = state.roll.context === "attack"
       ? `<span class="subcontext-divider"></span><label class="subcontext-field">Target <input data-roll-field="targetName" value="${escapeHtml(state.roll.targetName)}" placeholder="Optional"></label><label class="subcontext-field">AC <input data-roll-field="targetAC" value="${escapeHtml(state.roll.targetAC)}" type="number" min="1" max="40" placeholder="—"></label>`
       : `<span class="subcontext-divider"></span><label class="subcontext-field critical-chip"><input data-roll-field="critical" type="checkbox" ${state.roll.critical ? "checked" : ""}>Critical hit</label>`;
-    return `<span class="subcontext-label">Roll</span><button class="option-chip ${state.roll.context === "attack" ? "is-active" : ""}" type="button" data-context="attack">Attack</button><button class="option-chip ${state.roll.context === "damage" ? "is-active" : ""}" type="button" data-context="damage">Damage</button><span class="subcontext-divider"></span><span class="subcontext-label">Weapon</span>${weaponOptions || '<span class="applied-empty">No weapons</span>'}<button class="option-chip" type="button" data-action="add-weapon">＋</button>${contextual}`;
+    return `<span class="subcontext-label">Roll</span><button class="option-chip ${state.roll.context === "attack" ? "is-active" : ""}" type="button" data-context="attack">Attack</button><button class="option-chip ${state.roll.context === "damage" ? "is-active" : ""}" type="button" data-context="damage">Damage</button><span class="subcontext-divider"></span><span class="subcontext-label">Weapon</span>${weaponOptions || '<span class="applied-empty">No weapons</span>'}<button class="option-chip" type="button" data-action="add-weapon">＋</button>${attackMode}${contextual}`;
   }
   if (family === "spell") {
     const groups = availableSpells(state);
@@ -91,8 +93,8 @@ export function renderRollSubrail(state) {
       ${phase === "damage" && spell?.attack ? `<label class="subcontext-field critical-chip"><input data-roll-field="critical" type="checkbox" ${state.roll.critical ? "checked" : ""}>Critical</label>` : ""}
       ${phase === "damage" ? `<span class="spell-damage-summary">${escapeHtml(damage.notation)} · ${escapeHtml(damage.damageType)}</span>` : ""}<button class="option-chip" type="button" data-action="add-spell">＋</button>`;
   }
-  if (family === "skill") return `<span class="subcontext-label">Check</span>${SKILLS.map(skill => `<button class="option-chip ${skill.key === state.roll.selectedSkill ? "is-active" : ""}" type="button" data-select-skill="${skill.key}">${escapeHtml(skill.label)} ${signed(skillModifier(state, skill))}</button>`).join("")}`;
-  if (family === "save") return `<span class="subcontext-label">Saving throw</span>${ABILITIES.map(ability => `<button class="option-chip ${ability.key === state.roll.selectedSave ? "is-active" : ""}" type="button" data-select-save="${ability.key}">${ability.short} ${signed(saveModifier(state, ability.key))}</button>`).join("")}`;
+  if (family === "skill") return `<span class="subcontext-label">Check</span>${CHECKS.map(check => `<button class="option-chip ${check.key === state.roll.selectedSkill ? "is-active" : ""}" type="button" data-select-skill="${check.key}">${escapeHtml(check.label)} ${signed(checkModifier(state, check))}</button>`).join("")}`;
+  if (family === "save") return `<span class="subcontext-label">Saving throw</span>${ABILITIES.map(ability => `<button class="option-chip ${ability.key === state.roll.selectedSave ? "is-active" : ""}" type="button" data-select-save="${ability.key}">${ability.short} ${signed(saveModifier(state, ability.key))}</button>`).join("")}<button class="option-chip ${state.roll.selectedSave === "death" ? "is-active" : ""}" type="button" data-select-save="death">Death +0</button>`;
   return `<span class="subcontext-label">Custom</span><label class="subcontext-field wide">Name <input data-roll-field="customLabel" value="${escapeHtml(state.roll.customLabel)}" placeholder="Initiative"></label><label class="subcontext-field wide">Dice <input data-roll-field="customNotation" value="${escapeHtml(state.roll.customNotation)}" placeholder="2d6 + 3" autocapitalize="off" spellcheck="false"></label>`;
 }
 
@@ -107,8 +109,22 @@ export function renderDiceLoadout(state, plan) {
   plan.effects.forEach(effect => effect.entries.forEach(entry => {
     if (entry.kind === "flat") shownDice.push(flatToken(signed(entry.value), entry.label));
     if (entry.kind === "proficiency") shownDice.push(flatToken(signed(state.character.proficiencyBonus), entry.label));
+    if (entry.kind === "halfProficiency") shownDice.push(flatToken(signed(Math.floor(state.character.proficiencyBonus / 2)), entry.label));
     if (entry.kind === "multiplier") shownDice.push(flatToken(`×${entry.value}`, entry.label));
     if (entry.kind === "targetAC") shownDice.push(flatToken(`AC ${signed(entry.value)}`, entry.label));
+    if (entry.kind === "saveDC") shownDice.push(flatToken(`DC ${signed(entry.value)}`, entry.label));
+    if (entry.kind === "d20Floor") shownDice.push(flatToken(`d20 ≥ ${entry.value}`, entry.label));
+    if (entry.kind === "dieFloor") shownDice.push(flatToken(`die ≥ ${entry.value}`, entry.label));
+    if (entry.kind === "rerollValues") shownDice.push(flatToken(`reroll ${entry.values.join("/")}`, entry.label));
+    if (entry.kind === "rerollChoice") shownDice.push(flatToken("reroll ready", entry.label));
+    if (entry.kind === "rollTwice") shownDice.push(flatToken("keep higher", entry.label));
+    if (entry.kind === "criticalOnHit") shownDice.push(flatToken("critical", entry.label));
+    if (entry.kind === "criticalDamage") shownDice.push(flatToken("double dice", entry.label));
+    if (entry.kind === "blocked") shownDice.push(flatToken("blocked", entry.label));
+    if (entry.kind === "automaticFailure") shownDice.push(flatToken("auto fail", entry.label));
+    if (entry.kind === "missToHit") shownDice.push(flatToken("miss → hit", entry.label));
+    if (entry.kind === "ignoreResistance") shownDice.push(flatToken("ignore resist", entry.label));
+    if (entry.kind === "damageThreshold") shownDice.push(flatToken(`threshold ${entry.value}`, entry.label));
   }));
   return shownDice.join("") || '<span class="applied-empty">Enter valid dice notation</span>';
 }
@@ -128,7 +144,7 @@ export function renderModifierPopover(state, category, query = "") {
   const active = new Set([...(state.activeEffects || []), ...(state.roll.selectedEffects || [])]);
   const grouped = groupBy(catalog);
   return Object.entries(grouped).map(([group, effects]) => `<section><h3 class="modifier-group-title">${escapeHtml(group)}</h3>${effects.map(effect => {
-    const entries = effect.entries?.filter(entry => entry.contexts.some(context => rollContexts.includes(context))) || [];
+    const entries = effect.entries?.filter(entry => entry.contexts.some(context => rollContexts.includes(context)) && entryMatchesRoll(state, entry)) || [];
     const contexts = [...new Set(effect.entries.flatMap(entry => entry.contexts))].map(title).join(", ");
     const applicable = entries.length > 0 && effectMatchesRollScope(state, effect);
     return `<label class="modifier-option ${applicable ? "" : "is-disabled"}"><input type="checkbox" data-roll-effect="${effect.id}" ${active.has(effect.id) ? "checked" : ""} ${applicable ? "" : "disabled"}><span><strong>${escapeHtml(effect.name)}</strong><small>${escapeHtml(applicable ? effect.summary : `Applies to ${contexts}`)}</small></span><span class="modifier-value">${applicable ? escapeHtml(entryValue(entries, state, effect)) : "—"}</span></label>`;
@@ -147,11 +163,11 @@ function flatToken(value, label) {
 
 export function renderRollModifiers(state) {
   const catalog = effectCatalog(state).filter(effect => (effect.rulesets || []).includes(state.ruleset) || (effect.rulesets || []).includes("all"));
-  const relevant = catalog.filter(effect => effect.entries?.some(entry => entry.contexts.includes(state.roll.context)));
+  const relevant = catalog.filter(effect => effect.entries?.some(entry => entry.contexts.includes(state.roll.context) && entryMatchesRoll(state, entry)));
   if (!relevant.length) return `<div class="empty-inline">No saved modifiers apply to this roll.</div>`;
   const active = new Set([...(state.activeEffects || []), ...(state.roll.selectedEffects || [])]);
   return relevant.map(effect => {
-    const entries = effect.entries.filter(entry => entry.contexts.includes(state.roll.context));
+    const entries = effect.entries.filter(entry => entry.contexts.includes(state.roll.context) && entryMatchesRoll(state, entry));
     return `<label class="modifier-row">
       <input type="checkbox" data-roll-effect="${effect.id}" ${active.has(effect.id) ? "checked" : ""}>
       <span><strong>${escapeHtml(effect.name)}</strong><small>${escapeHtml(effect.group || "Custom")}${state.activeEffects.includes(effect.id) ? " · stays active" : ""}</small></span>
@@ -179,7 +195,7 @@ export function renderCharacter(state) {
     </section>
     <section class="panel">
       <div class="panel-head"><h2>Skills & saves</h2><span class="field-note">Tap rank to cycle none → proficient → expertise</span></div>
-      <div class="data-list">${SKILLS.map(skill => `<div class="data-row"><div><strong>${skill.label}</strong><small>${skill.ability.toUpperCase()}</small></div><span>${signed(skillModifier(state, skill))}</span><button class="mini-btn" type="button" data-skill-rank="${skill.key}">${rankLabel(c.skills[skill.key])}</button></div>`).join("")}</div>
+      <div class="data-list">${SKILLS.map(skill => `<div class="data-row"><div><strong>${skill.label}</strong><small>${skill.ability.toUpperCase()}</small></div><span>${signed(checkModifier(state, skill))}</span><button class="mini-btn" type="button" data-skill-rank="${skill.key}">${rankLabel(c.skills[skill.key])}</button></div>`).join("")}</div>
       <div class="section-title-row spaced-title"><h2>Saving throws</h2></div>
       <div class="data-list">${ABILITIES.map(a => `<div class="data-row"><div><strong>${a.label}</strong><small>Saving throw</small></div><span>${signed(saveModifier(state, a.key))}</span><button class="mini-btn" type="button" data-save-rank="${a.key}">${rankLabel(c.saves[a.key])}</button></div>`).join("")}</div>
     </section>
@@ -249,8 +265,9 @@ export function effectForm(effect = {}) {
     <label class="field"><span class="field-label">Name</span><input name="name" required value="${escapeHtml(effect.name || "")}" placeholder="Potion bonus, favored enemy…"></label>
     <label class="field"><span class="field-label">Description</span><textarea name="summary" placeholder="When this modifier applies">${escapeHtml(effect.summary || "")}</textarea></label>
     <div class="field"><span class="field-label">Applies to</span><div class="check-grid">${["attack","damage","spell","skill","save","custom"].map(context => `<label class="check-chip"><input type="checkbox" name="contexts" value="${context}" ${entry.contexts?.includes(context) ? "checked" : ""}>${title(context)}</label>`).join("")}</div></div>
-    <label class="field"><span class="field-label">Modifier type</span><select name="kind"><option value="die" ${entry.kind === "die" ? "selected" : ""}>Extra dice</option><option value="flat" ${entry.kind === "flat" ? "selected" : ""}>Flat number</option><option value="advantage" ${entry.mode === "advantage" ? "selected" : ""}>Advantage</option><option value="disadvantage" ${entry.mode === "disadvantage" ? "selected" : ""}>Disadvantage</option><option value="targetAC" ${entry.kind === "targetAC" ? "selected" : ""}>Target AC change</option><option value="multiplier" ${entry.kind === "multiplier" ? "selected" : ""}>Damage multiplier</option></select></label>
-    <label class="field"><span class="field-label">Dice or value</span><input name="value" value="${escapeHtml(entry.notation || entry.value || "1d4")}" placeholder="1d4 or 2"></label>
+    <label class="field"><span class="field-label">Modifier type</span><select name="kind"><option value="die" ${entry.kind === "die" ? "selected" : ""}>Bonus or penalty dice</option><option value="flat" ${entry.kind === "flat" ? "selected" : ""}>Flat number</option><option value="proficiency" ${entry.kind === "proficiency" ? "selected" : ""}>Proficiency Bonus</option><option value="halfProficiency" ${entry.kind === "halfProficiency" ? "selected" : ""}>Half Proficiency Bonus</option><option value="advantage" ${entry.mode === "advantage" ? "selected" : ""}>Advantage</option><option value="disadvantage" ${entry.mode === "disadvantage" ? "selected" : ""}>Disadvantage</option><option value="targetAC" ${entry.kind === "targetAC" ? "selected" : ""}>Target AC change</option><option value="multiplier" ${entry.kind === "multiplier" ? "selected" : ""}>Damage multiplier</option><option value="ignoreResistance" ${entry.kind === "ignoreResistance" ? "selected" : ""}>Ignore damage resistance</option><option value="d20Floor" ${entry.kind === "d20Floor" ? "selected" : ""}>Minimum d20 result</option><option value="criticalRange" ${entry.kind === "criticalRange" ? "selected" : ""}>Critical threshold</option><option value="rerollValues" ${entry.kind === "rerollValues" ? "selected" : ""}>Reroll specific results</option><option value="rerollChoice" ${entry.kind === "rerollChoice" ? "selected" : ""}>Reroll one die after rolling</option><option value="dieFloor" ${entry.kind === "dieFloor" ? "selected" : ""}>Minimum die face</option><option value="rollTwice" ${entry.kind === "rollTwice" ? "selected" : ""}>Roll damage twice</option><option value="criticalOnHit" ${entry.kind === "criticalOnHit" ? "selected" : ""}>Automatic critical on hit</option><option value="criticalDamage" ${entry.kind === "criticalDamage" ? "selected" : ""}>Double damage dice</option><option value="missToHit" ${entry.kind === "missToHit" ? "selected" : ""}>Turn a miss into a hit</option><option value="saveDC" ${entry.kind === "saveDC" ? "selected" : ""}>Spell save DC change</option><option value="damageThreshold" ${entry.kind === "damageThreshold" ? "selected" : ""}>Damage threshold</option><option value="automaticFailure" ${entry.kind === "automaticFailure" ? "selected" : ""}>Automatic failure</option><option value="blocked" ${entry.kind === "blocked" ? "selected" : ""}>Roll blocked</option></select></label>
+    <label class="field"><span class="field-label">Dice, value, or reroll faces</span><input name="value" value="${escapeHtml(entry.notation || entry.values?.join(",") || entry.value || "1d4")}" placeholder="1d4, -1d4, 2, or 1,2"><span class="field-note">For rerolls, enter die faces separated by commas. Types without a number ignore this field.</span></label>
+    <label class="field"><span class="field-label">Damage type</span><select name="damageType"><option value="same">Same as the base damage</option>${DAMAGE_TYPES.map(type => `<option value="${type}" ${entry.damageType === type ? "selected" : ""}>${type}</option>`).join("")}</select></label>
   </form>`;
 }
 
@@ -298,14 +315,29 @@ export function entryValue(entries, state, effect) {
     if (entry.kind === "die") return state.effectConfig?.[effect.id]?.notation || entry.notation;
     if (entry.kind === "mode") return title(entry.mode);
     if (entry.kind === "proficiency") return `+${state.character.proficiencyBonus}`;
+    if (entry.kind === "halfProficiency") return `+${Math.floor(state.character.proficiencyBonus / 2)}`;
     if (entry.kind === "multiplier") return `×${entry.value}`;
     if (entry.kind === "targetAC") return `AC ${signed(entry.value)}`;
+    if (entry.kind === "saveDC") return `DC ${signed(entry.value)}`;
+    if (entry.kind === "d20Floor") return `d20 ≥ ${entry.value}`;
+    if (entry.kind === "criticalRange") return `critical ${entry.value}+`;
+    if (entry.kind === "rerollValues") return `reroll ${entry.values.join("/")}`;
+    if (entry.kind === "rerollChoice") return "reroll ready";
+    if (entry.kind === "dieFloor") return `die ≥ ${entry.value}`;
+    if (entry.kind === "rollTwice") return "keep higher";
+    if (entry.kind === "criticalOnHit") return "critical on hit";
+    if (entry.kind === "criticalDamage") return "double dice";
+    if (entry.kind === "automaticFailure") return "auto fail";
+    if (entry.kind === "blocked") return "blocked";
+    if (entry.kind === "damageThreshold") return `threshold ${entry.value}`;
+    if (entry.kind === "missToHit") return "miss becomes hit";
+    if (entry.kind === "ignoreResistance") return "ignore resistance";
     if (entry.kind === "flat" && state.effectConfig?.[effect.id]?.notation) return state.effectConfig[effect.id].notation;
     return signed(entry.value);
   }).join(" / ");
 }
 
-function skillModifier(state, skill) { return abilityModifier(state.character.abilities[skill.ability]) + Number(state.character.skills[skill.key] || 0) * Number(state.character.proficiencyBonus || 0); }
+function checkModifier(state, check) { return abilityModifier(state.character.abilities[check.ability]) + (check.special ? 0 : Number(state.character.skills[check.key] || 0) * Number(state.character.proficiencyBonus || 0)); }
 function saveModifier(state, ability) { return abilityModifier(state.character.abilities[ability]) + Number(state.character.saves[ability] || 0) * Number(state.character.proficiencyBonus || 0); }
 function weaponAttack(state, weapon) { return abilityModifier(state.character.abilities[weapon.ability]) + (weapon.proficient ? Number(state.character.proficiencyBonus || 0) : 0) + Number(weapon.attackBonus || 0); }
 function spellAttack(state) { return state.character.spellAttackBonus ?? abilityModifier(state.character.abilities[state.character.spellAbility]) + Number(state.character.proficiencyBonus || 0); }

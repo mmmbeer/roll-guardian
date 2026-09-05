@@ -11,8 +11,10 @@ The roll view is organized as a full-viewport dice platform. Modifier groups and
 - Weapon-specific attack and damage math
 - Rollable SRD 5.1 and 5.2.1 spell catalogs with attack/damage phases and scaling
 - Imported class detection with context-aware character feature shortcuts
-- Conditions, feats, spell riders, target cover, resistance, and vulnerability
-- User-defined flat, dice, advantage, disadvantage, target-AC, and damage-multiplier effects
+- More than 120 modifier presets per rules profile across conditions, situations, spells, features, feats, fighting styles, weapon masteries, and SRD magic items
+- Typed resistance, vulnerability, immunity, damage thresholds, rerolls, die minimums, automatic criticals, expanded critical ranges, and spell save DC changes
+- User-defined flat, dice, advantage, disadvantage, AC, save-DC, damage-defense, reroll, minimum-result, and critical effects
+- Skill checks, straight ability checks, Initiative, ability saving throws, and death saving throws
 - Client-side D&D Beyond PDF and JSON character import
 - Local character storage, backup export/import, and roll history
 - Canvas-rendered 3D polyhedral dice whose final faces drive the calculated result
@@ -56,6 +58,8 @@ The `dist/_headers` file sets a restrictive content security policy and other br
 ```sh
 npm test
 ```
+
+The detailed modifier coverage matrix and audit boundary are in [`docs/modifier-audit.md`](docs/modifier-audit.md).
 
 ## Character imports
 

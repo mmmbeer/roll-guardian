@@ -3,6 +3,7 @@ import test from "node:test";
 import { importCharacterJson } from "../dist/js/importer.js";
 import { characterFeatureEffects } from "../dist/js/character-features.js";
 import { buildRollPlan, executeRoll, parseNotation, rollDie } from "../dist/js/roll-engine.js";
+import { EFFECT_PRESETS } from "../dist/js/rules-data.js";
 import { availableSpells, spellDamage, spellsForRuleset } from "../dist/js/spell-data.js";
 import { createDefaultState } from "../dist/js/state.js";
 
@@ -24,6 +25,7 @@ test("advantage and disadvantage sources cancel", () => {
 test("2014 power attack changes both attack and damage", () => {
   const state = createDefaultState();
   state.ruleset = "2014";
+  state.character.weapons[0].properties = "Heavy, Two-Handed";
   state.activeEffects = ["great-weapon-master-2014"];
   assert.equal(buildRollPlan(state).flat, -2);
   state.roll.context = "damage";
@@ -133,4 +135,115 @@ test("switches an SRD spell between its attack and damage rolls", () => {
   const damagePlan = buildRollPlan(state);
   assert.equal(damagePlan.base.damageRoll, true);
   assert.deepEqual(damagePlan.dice.map(die => die.sides), [6, 6, 6, 6]);
+});
+
+test("provides broad modifier coverage for both supported rulesets", () => {
+  const requiredKinds = ["automaticFailure", "blocked", "criticalDamage", "criticalOnHit", "criticalRange", "d20Floor", "damageThreshold", "dieFloor", "halfProficiency", "ignoreResistance", "missToHit", "rerollChoice", "rerollValues", "rollTwice", "saveDC", "targetAC"];
+  const allKinds = new Set(EFFECT_PRESETS.flatMap(effect => effect.entries.map(entry => entry.kind)));
+  requiredKinds.forEach(kind => assert.ok(allKinds.has(kind), `catalog is missing ${kind}`));
+  for (const ruleset of ["2014", "2024"]) {
+    const effects = EFFECT_PRESETS.filter(effect => effect.rulesets.includes(ruleset));
+    assert.ok(effects.length >= 120);
+    const kinds = new Set(effects.flatMap(effect => effect.entries.filter(entry => !entry.rulesets || entry.rulesets.includes(ruleset)).map(entry => entry.kind)));
+    ["mode", "die", "flat", "multiplier", "rerollChoice", "rerollValues", "criticalRange", "saveDC"].forEach(kind => assert.ok(kinds.has(kind), `${ruleset} is missing ${kind}`));
+  }
+});
+
+test("scopes ability, check, and attack-type modifiers", () => {
+  const state = createDefaultState();
+  state.roll.context = "skill";
+  state.roll.selectedSkill = "stealth";
+  state.activeEffects = ["pass-without-trace", "alert-2024"];
+  assert.equal(buildRollPlan(state).flat, 10);
+  state.roll.selectedSkill = "initiative";
+  assert.equal(buildRollPlan(state).flat, state.character.proficiencyBonus);
+  state.roll.context = "attack";
+  state.roll.selectedWeaponId = state.character.weapons[0].id;
+  state.activeEffects = ["archery"];
+  assert.equal(buildRollPlan(state).effects.length, 0);
+  state.roll.selectedWeaponId = state.character.weapons[1].id;
+  assert.equal(buildRollPlan(state).effects[0].id, "archery");
+});
+
+test("lets a thrown weapon switch between melee and ranged modifiers", () => {
+  const state = createDefaultState();
+  state.character.weapons[0].properties = "Finesse, Light, Thrown";
+  state.activeEffects = ["long-range"];
+  assert.equal(buildRollPlan(state).effects.length, 0);
+  state.roll.attackMode = "ranged";
+  assert.equal(buildRollPlan(state).mode, "disadvantage");
+});
+
+test("supports straight ability checks and death saving throws", () => {
+  const state = createDefaultState();
+  state.roll.context = "skill";
+  state.roll.selectedSkill = "ability-str";
+  assert.equal(buildRollPlan(state).base.label, "Strength check");
+  state.roll.context = "save";
+  state.roll.selectedSave = "death";
+  state.activeEffects = ["beacon-of-hope"];
+  const plan = buildRollPlan(state);
+  assert.equal(plan.base.saveKind, "death");
+  assert.equal(plan.mode, "advantage");
+});
+
+test("applies reliable talent only to trained checks", () => {
+  const state = createDefaultState();
+  state.roll.context = "skill";
+  state.roll.selectedSkill = "perception";
+  state.activeEffects = ["reliable-talent"];
+  let plan = buildRollPlan(state);
+  let outcome = executeRoll(plan, [{ ...plan.dice[0], value: 3 }]);
+  assert.equal(outcome.d20Applied, 10);
+  assert.equal(outcome.total, 13);
+  state.roll.selectedSkill = "athletics";
+  plan = buildRollPlan(state);
+  assert.equal(plan.d20Floor, 0);
+});
+
+test("applies resistance to only the configured damage type", () => {
+  const state = createDefaultState();
+  state.roll.context = "damage";
+  state.activeEffects = ["hex", "target-resistant"];
+  state.effectConfig["target-resistant"] = { damageType: "Necrotic" };
+  const plan = buildRollPlan(state);
+  const outcome = executeRoll(plan, plan.dice.map((die, index) => ({ ...die, value: index ? 6 : 8 })));
+  assert.deepEqual(outcome.damageBreakdown, [
+    { damageType: "Slashing", raw: 8, multiplier: 1, total: 8 },
+    { damageType: "Necrotic", raw: 6, multiplier: 0.5, total: 3 }
+  ]);
+  assert.equal(outcome.total, 11);
+});
+
+test("rolls Savage Attacker weapon dice twice and keeps the higher set", () => {
+  const state = createDefaultState();
+  state.roll.context = "damage";
+  state.activeEffects = ["savage-attacker-2024"];
+  const plan = buildRollPlan(state);
+  assert.equal(plan.dice.length, 2);
+  const outcome = executeRoll(plan, [{ ...plan.dice[0], value: 2 }, { ...plan.dice[1], value: 7 }]);
+  assert.equal(outcome.total, 7);
+  assert.equal(outcome.alternateDiscarded, 2);
+});
+
+test("applies the 2024 Great Weapon Fighting die minimum", () => {
+  const state = createDefaultState();
+  state.roll.context = "damage";
+  state.activeEffects = ["great-weapon-fighting-2024"];
+  const plan = buildRollPlan(state);
+  const outcome = executeRoll(plan, [{ ...plan.dice[0], value: 1 }]);
+  assert.equal(outcome.usedResults[0].calculatedValue, 3);
+  assert.equal(outcome.total, 3);
+});
+
+test("does not add d20-only support dice to spell damage", () => {
+  const state = createDefaultState();
+  state.roll.context = "spell";
+  state.roll.selectedSpellId = "srd-2024-fireball";
+  state.roll.spellPhase = "damage";
+  state.activeEffects = ["bless", "rod-pact-keeper"];
+  const plan = buildRollPlan(state);
+  assert.equal(plan.effects.some(effect => effect.id === "bless"), false);
+  assert.equal(plan.flat, 0);
+  assert.equal(plan.saveDC, 12);
 });

@@ -69,3 +69,21 @@ test("features picker exposes a scaled Sneak Attack for an imported rogue", () =
   assert.match(markup, /data-roll-effect="sneak-attack"[^>]*>/);
   assert.doesNotMatch(markup, /data-roll-effect="sneak-attack"[^>]*disabled/);
 });
+
+test("modifier picker disables a scoped preset outside its trigger", () => {
+  const state = createDefaultState();
+  state.roll.context = "skill";
+  state.roll.selectedSkill = "athletics";
+  const markup = renderModifierPopover(state, "search", "Pass without Trace");
+  assert.match(markup, /Pass without Trace/);
+  assert.match(markup, /is-disabled/);
+});
+
+test("roll rails include initiative, straight checks, and death saves", () => {
+  const state = createDefaultState();
+  state.roll.context = "skill";
+  assert.match(renderRollSubrail(state), /Initiative/);
+  assert.match(renderRollSubrail(state), /Strength check/);
+  state.roll.context = "save";
+  assert.match(renderRollSubrail(state), /Death \+0/);
+});

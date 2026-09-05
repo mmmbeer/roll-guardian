@@ -1,4 +1,4 @@
-import { abilityModifier } from "./state.js?v=1.2.0";
+import { abilityModifier } from "./state.js?v=1.3.0";
 
 export function characterFeatureEffects(character, ruleset) {
   if (!character?.imported) return [];
