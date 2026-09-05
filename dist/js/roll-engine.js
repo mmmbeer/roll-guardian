@@ -1,5 +1,5 @@
-import { EFFECT_PRESETS, SKILLS } from "./rules-data.js";
-import { abilityModifier } from "./state.js";
+import { EFFECT_PRESETS, SKILLS } from "./rules-data.js?v=1.1.1";
+import { abilityModifier } from "./state.js?v=1.1.1";
 
 const DIE_RE = /([+-]?)(\d*)d(\d+)|([+-]?\d+)/gi;
 

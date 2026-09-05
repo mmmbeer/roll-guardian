@@ -1,6 +1,6 @@
-import { ABILITIES, DAMAGE_TYPES, EFFECT_PRESETS, SKILLS, WEAPON_LIBRARY, effectsForRuleset } from "./rules-data.js";
-import { abilityModifier } from "./state.js";
-import { baseForContext, effectCatalog, getApplicableEffects } from "./roll-engine.js";
+import { ABILITIES, DAMAGE_TYPES, EFFECT_PRESETS, SKILLS, WEAPON_LIBRARY, effectsForRuleset } from "./rules-data.js?v=1.1.1";
+import { abilityModifier } from "./state.js?v=1.1.1";
+import { baseForContext, effectCatalog, getApplicableEffects } from "./roll-engine.js?v=1.1.1";
 
 export const $ = selector => document.querySelector(selector);
 export const $$ = selector => [...document.querySelectorAll(selector)];

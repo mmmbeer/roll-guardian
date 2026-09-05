@@ -1,13 +1,13 @@
-import { createDiceTray, playDiceSound } from "./dice-3d.js";
-import { importCharacterFile } from "./importer.js";
-import { buildRollPlan, effectCatalog, executeRoll } from "./roll-engine.js";
-import { createDefaultState, loadState, proficiencyForLevel, saveState, uid } from "./state.js";
+import { createDiceTray, playDiceSound } from "./dice-3d.js?v=1.1.1";
+import { importCharacterFile } from "./importer.js?v=1.1.1";
+import { buildRollPlan, effectCatalog, executeRoll } from "./roll-engine.js?v=1.1.1";
+import { createDefaultState, loadState, proficiencyForLevel, saveState, uid } from "./state.js?v=1.1.1";
 import {
   $, $$, closeModal, effectForm, escapeHtml, helpContent, importModal, modalButtons,
   modifierCategoryLabel, openModal, renderAppliedModifiers, renderCharacter,
   renderDiceLoadout, renderEffects, renderHistory, renderModifierPopover,
   renderRollSubrail, rollFamily, signed, spellForm, toast, weaponForm
-} from "./ui.js";
+} from "./ui.js?v=1.1.1";
 
 let state = loadState();
 let modalAction = null;
@@ -370,7 +370,7 @@ async function parseCharacterImport(file) {
 }
 
 function fillWeaponForm(index) {
-  import("./rules-data.js").then(({ WEAPON_LIBRARY }) => {
+  import("./rules-data.js?v=1.1.1").then(({ WEAPON_LIBRARY }) => {
     const weapon = WEAPON_LIBRARY[index]; const form = $("#weaponForm"); if (!weapon || !form) return;
     ["name","ability","damage","damageType","properties"].forEach(key => { form.elements[key].value = weapon[key]; });
   });
