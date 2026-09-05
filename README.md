@@ -31,17 +31,19 @@ For a Git-connected Cloudflare Pages project use:
 
 - Production branch: `main`
 - Framework preset: `None`
-- Build command: leave blank
+- Build command: `exit 0`
 - Build output directory: `dist`
 - Root directory: repository root
 
-If the Cloudflare project has a separate **Deploy command** field, set it to:
+Pages Git integration does not use a separate **Deploy command**. If the Cloudflare settings require one and the build log says `Executing user deploy command`, the repository was connected through **Workers Builds**, not **Pages > Import an existing Git repository**. Create or reconnect it as a Pages Git project instead.
+
+For an intentionally configured Direct Upload or third-party CI workflow, deploy with:
 
 ```sh
 npm run deploy
 ```
 
-Do not use `npx wrangler deploy`. That command targets Cloudflare Workers. This repository is configured for Pages, so its deploy script uses `wrangler pages deploy` and explicitly uploads `dist`.
+That CI environment must provide `CLOUDFLARE_API_TOKEN` with **Account > Cloudflare Pages > Edit** permission for the target account. Do not use `npx wrangler deploy`, which targets Cloudflare Workers.
 
 The `dist/_headers` file sets a restrictive content security policy and other browser security headers. Character data remains in the visitor's browser and the application makes no network requests.
 
