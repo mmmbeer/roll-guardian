@@ -19,6 +19,7 @@ export function importCharacterJson(input) {
   const scores = extractAbilityScores(data);
   const itemNames = extractInventory(data).map(item => item.definition?.name || item.name).filter(Boolean);
   const classes = extractClasses(data);
+  const spells = extractSpells(data);
   const character = {
     name: data.name || data.characterName || "Imported character",
     level,
@@ -33,7 +34,8 @@ export function importCharacterJson(input) {
     spellAttackBonus: number(data.spellAttackBonus ?? data.spellAttack),
     spellSaveDC: number(data.spellSaveDC ?? data.spellSaveDc),
     weapons: extractWeapons(data),
-    spells: extractSpells(data),
+    spells,
+    maxSpellLevel: extractMaxSpellLevel(data, classes, spells),
     items: [...new Set(itemNames)]
   };
   const itemCount = extractInventory(data).length;
@@ -70,6 +72,7 @@ export function importCharacterPdf(buffer) {
     spellAbility: "wis",
     spellAttackBonus: plausibleBonus(findField(lookup, ["spellatkbonus", "spell attack bonus", "spellcastingbonus"])),
     spellSaveDC: plausibleDC(findField(lookup, ["spellsavedc", "spell save dc"])),
+    maxSpellLevel: maxClassSpellLevel([], classes),
     weapons,
     spells: [],
     items: equipment
@@ -113,20 +116,117 @@ function extractWeapons(data) {
 
 function extractSpells(data) {
   const groups = [data.spells, data.classSpells, data.raceSpells, data.itemSpells]
-    .flatMap(group => Array.isArray(group) ? group : group && typeof group === "object" ? Object.values(group).flat() : []);
-  return dedupe(groups.map(item => item.definition || item).filter(Boolean).map(spell => {
-    const damage = firstDice(spell.damage || spell.damageEffect || spell.description || "");
-    const save = spell.saveDcAbilityId || spell.saveAbility || /saving throw/i.test(spell.description || "");
-    const attack = spell.requiresAttackRoll || /spell attack/i.test(spell.description || "");
+    .flatMap(collectSpellRecords);
+  const spells = groups.map(item => {
+    const spell = item.definition || item.spellDefinition || item;
+    const description = spell.description || item.description || "";
+    const damage = firstDice(spell.damage || spell.damageEffect || description);
+    const save = spell.saveDcAbilityId || spell.saveAbility || /saving throw/i.test(description);
+    const attack = spell.requiresAttackRoll || item.requiresAttackRoll || /spell attack/i.test(description);
+    const prepared = firstBoolean(item.isPrepared, item.prepared, item.alwaysPrepared, spell.alwaysPrepared);
     return {
       id: uid(), name: spell.name || "Imported spell",
-      source: "character", imported: true, level: number(spell.level ?? spell.levelNumber ?? spell.definition?.level),
+      source: "character", imported: true,
+      level: number(spell.level ?? spell.levelNumber ?? item.level ?? item.spellLevel),
+      prepared,
       rollType: attack ? "attack" : save ? "save" : damage ? "damage" : "attack",
       damage: damage || "1d8", damageBonus: 0,
       damageType: spell.damageType || spell.damage?.damageType || "Spell damage",
-      attackBonus: number(spell.attackBonus), saveDC: number(spell.saveDC || spell.dc)
+      attackBonus: number(item.attackBonus ?? spell.attackBonus), saveDC: number(item.saveDC ?? spell.saveDC ?? spell.dc)
     };
-  }), spell => spell.name.toLowerCase());
+  });
+  return mergeDuplicateSpells(spells);
+}
+
+function collectSpellRecords(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.flatMap(collectSpellRecords);
+  if (typeof value !== "object") return [];
+  if (value.spells) return collectSpellRecords(value.spells);
+  const definition = value.definition || value.spellDefinition || value;
+  if (definition?.name && (definition.level != null || definition.levelNumber != null || definition.school || definition.requiresAttackRoll != null)) {
+    return [value];
+  }
+  return Object.values(value).flatMap(collectSpellRecords);
+}
+
+function mergeDuplicateSpells(spells) {
+  const merged = new Map();
+  spells.forEach(spell => {
+    const key = String(spell.name).toLowerCase().trim();
+    const existing = merged.get(key);
+    if (!existing) merged.set(key, spell);
+    else if (spell.prepared === true) existing.prepared = true;
+  });
+  return [...merged.values()];
+}
+
+function extractMaxSpellLevel(data, classes, spells) {
+  const explicit = maxExplicitSlotLevel(data);
+  if (explicit != null) return explicit;
+  const classLevel = maxClassSpellLevel(data.classes, classes);
+  if (classLevel != null) return classLevel;
+  const spellLevels = spells.map(spell => Number(spell.level)).filter(Number.isFinite);
+  return spellLevels.length ? Math.max(...spellLevels) : null;
+}
+
+function maxExplicitSlotLevel(data) {
+  const sources = [data.spellSlots, data.spell_slots, data.spellcasting?.spellSlots, data.spellcasting?.slots]
+    .filter(Boolean);
+  const levels = sources.flatMap(slotLevelsFromValue);
+  return levels.length ? Math.max(...levels) : null;
+}
+
+function slotLevelsFromValue(value) {
+  if (Array.isArray(value)) {
+    return value.flatMap((entry, index) => {
+      if (typeof entry === "number") return entry > 0 ? [index + 1] : [];
+      const level = number(entry?.level ?? entry?.spellLevel ?? entry?.slotLevel);
+      const count = number(entry?.max ?? entry?.total ?? entry?.slots ?? entry?.available ?? entry?.value);
+      return level != null && (count == null || count > 0) ? [level] : [];
+    });
+  }
+  if (typeof value === "object") {
+    return Object.entries(value).flatMap(([key, entry]) => {
+      if (!/^\d+$/.test(key)) return [];
+      const count = typeof entry === "object"
+        ? number(entry?.max ?? entry?.total ?? entry?.slots ?? entry?.available ?? entry?.value)
+        : number(entry);
+      return count > 0 ? [Number(key)] : [];
+    });
+  }
+  return [];
+}
+
+function maxClassSpellLevel(rawClasses, classes) {
+  if (!classes.length) return null;
+  const raw = Array.isArray(rawClasses) ? rawClasses : [];
+  const levels = classes.map((entry, index) => classSpellLevel(entry, raw[index]));
+  const recognized = levels.filter(level => level != null);
+  return recognized.length ? Math.max(...recognized) : null;
+}
+
+function classSpellLevel(entry, raw = {}) {
+  const name = String(entry.name || "").toLowerCase();
+  const subclass = String(raw.subclassDefinition?.name || raw.subclass?.name || raw.subclassName || "").toLowerCase();
+  const level = Math.max(1, Number(entry.level || 1));
+  if (/bard|cleric|druid|sorcerer|wizard/.test(name)) return Math.min(9, Math.ceil(level / 2));
+  if (/warlock/.test(name)) return Math.min(5, Math.ceil(level / 2));
+  if (/artificer|paladin|ranger/.test(name)) return Math.min(5, level < 5 ? 1 : Math.floor((level + 3) / 4));
+  if (/arcane trickster|eldritch knight/.test(subclass)) {
+    if (level < 3) return -1;
+    if (level < 7) return 1;
+    if (level < 13) return 2;
+    if (level < 19) return 3;
+    return 4;
+  }
+  if (/barbarian|fighter|monk|rogue/.test(name)) return -1;
+  return null;
+}
+
+function firstBoolean(...values) {
+  const found = values.find(value => typeof value === "boolean");
+  return found == null ? null : found;
 }
 
 function extractClasses(data) {

@@ -68,7 +68,7 @@ Third-party software notices are in [`docs/third-party-notices.md`](docs/third-p
 
 ## Character imports
 
-JSON exports provide the most complete import, including classes, recognizable class features, and known spells. Known spells are marked and sorted above the SRD catalog. D&D Beyond PDF structure varies, so the PDF importer reads exposed form fields and applies conservative heuristics. Review imported weapons and ability scores before play.
+JSON exports provide the most complete import, including classes, recognizable class features, nested spell groups, and preparation state. Prepared and available character spells are marked and grouped above a level-appropriate SRD catalog. D&D Beyond PDF structure varies, so the PDF importer reads exposed form fields and applies conservative heuristics. Review imported weapons and ability scores before play.
 
 ## Open rules material
 

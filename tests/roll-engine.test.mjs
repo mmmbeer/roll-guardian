@@ -121,6 +121,29 @@ test("imports common D&D Beyond JSON structures", () => {
   assert.equal(imported.character.spells[0].imported, true);
 });
 
+test("imports nested D&D Beyond spell groups and preparation state", () => {
+  const imported = importCharacterJson({ data: {
+    name: "Sable",
+    classes: [{ level: 1, definition: { name: "Wizard" } }],
+    classSpells: [{ spells: [
+      { isPrepared: true, definition: { name: "Hunter's Mark (Prepared)", level: 1, school: "Divination" } },
+      { prepared: false, definition: { name: "Fire Bolt", level: 0, school: "Evocation", requiresAttackRoll: true } }
+    ] }]
+  }});
+  assert.equal(imported.character.spells.length, 2);
+  assert.equal(imported.character.spells[0].prepared, true);
+  assert.equal(imported.character.maxSpellLevel, 1);
+});
+
+test("uses total spell slots even when every slot is currently spent", () => {
+  const imported = importCharacterJson({ data: {
+    name: "Ash",
+    classes: [{ level: 1, definition: { name: "Wizard" } }],
+    spellSlots: [{ level: 1, max: 2, available: 0 }]
+  }});
+  assert.equal(imported.character.maxSpellLevel, 1);
+});
+
 test("builds level-aware roll features for an imported rogue", () => {
   const state = createDefaultState();
   state.character = { ...state.character, imported: true, level: 7, classes: [{ name: "Rogue", level: 7 }], featureNames: [] };
@@ -149,6 +172,29 @@ test("sorts imported character spells before the SRD library", () => {
   assert.equal(spells.known[0].name, "Fireball");
   assert.equal(spells.known[0].known, true);
   assert.equal(spells.library.some(spell => spell.name === "Fireball"), false);
+});
+
+test("matches annotated spell names and caps an imported caster's SRD library", () => {
+  const state = createDefaultState();
+  state.character = {
+    ...state.character,
+    imported: true,
+    level: 1,
+    classes: [{ name: "Wizard", level: 1 }],
+    maxSpellLevel: 1,
+    spells: [{ id: "known-hunters-mark", name: "Hunter's Mark (Prepared)", prepared: true, imported: true }]
+  };
+  const spells = availableSpells(state);
+  assert.equal(spells.known[0].catalogId, "srd-2024-hunter-s-mark");
+  assert.equal(spells.known[0].damages[0].notation, "1d6");
+  assert.equal(spells.library.some(spell => spell.name === "Hunter’s Mark"), false);
+  assert.equal(spells.library.every(spell => spell.level <= 1), true);
+  assert.equal(spells.library.some(spell => spell.level === 9), false);
+});
+
+test("keeps the full SRD library for a manually configured character", () => {
+  const state = createDefaultState();
+  assert.equal(availableSpells(state).library.some(spell => spell.level === 9), true);
 });
 
 test("scales SRD cantrips and common upcast damage", () => {

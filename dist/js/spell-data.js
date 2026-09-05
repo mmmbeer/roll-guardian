@@ -216,15 +216,31 @@ export function spellsForRuleset(ruleset) {
 
 export function availableSpells(state) {
   const library = spellsForRuleset(state.ruleset);
-  const byName = new Map(library.map(spell => [normalizeName(spell.name), spell]));
+  const byName = new Map(library.flatMap(spell => spellNameKeys(spell.name).map(key => [key, spell])));
   const known = (state.character.spells || []).map(spell => {
-    const catalogSpell = byName.get(normalizeName(spell.name));
+    const catalogSpell = spellNameKeys(spell.name).map(key => byName.get(key)).find(Boolean);
     return { ...(catalogSpell || {}), ...spell, source: "character", known: true,
       attack: catalogSpell?.attack ?? spell.rollType === "attack",
+      catalogId: catalogSpell?.id || null,
       damages: catalogSpell?.damages || customDamages(spell), level: catalogSpell?.level ?? spell.level ?? 0 };
-  }).sort(sortSpells);
-  const knownNames = new Set(known.map(spell => normalizeName(spell.name)));
-  return { known, library: library.filter(spell => !knownNames.has(normalizeName(spell.name))).sort(sortSpells) };
+  }).sort(sortKnownSpells);
+  const knownCatalogIds = new Set(known.map(spell => spell.catalogId).filter(Boolean));
+  const maxLevel = spellLevelAccess(state.character);
+  const availableLibrary = library
+    .filter(spell => !knownCatalogIds.has(spell.id))
+    .filter(spell => maxLevel == null || spell.level <= maxLevel)
+    .sort(sortSpells);
+  return { known, library: availableLibrary, maxLevel };
+}
+
+export function spellLevelAccess(character) {
+  if (!character?.imported) return null;
+  const explicit = Number(character.maxSpellLevel);
+  if (character.maxSpellLevel != null && Number.isFinite(explicit)) return Math.max(-1, Math.min(9, explicit));
+  const levels = (character.classes || []).map(entry => classSpellLevel(entry)).filter(level => level != null);
+  if (levels.length) return Math.max(...levels);
+  const knownLevels = (character.spells || []).map(spell => Number(spell.level)).filter(Number.isFinite);
+  return knownLevels.length ? Math.max(...knownLevels) : null;
 }
 
 export function selectedSpell(state) {
@@ -283,6 +299,31 @@ function appendNotation(notation, extra, count) {
   return count > 0 ? [notation, ...Array(count).fill(extra)].join(" + ") : notation;
 }
 
+function spellNameKeys(value) {
+  const raw = String(value || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
+  const withoutNotes = raw.replace(/(?:\s*[([][^\])]*[\])])+\s*$/g, "").replace(/\s*[★*†‡]+\s*$/g, "");
+  const normalized = normalizeName(withoutNotes);
+  const aliases = {
+    "bigby s hand": "arcane hand",
+    "evard s black tentacles": "black tentacles",
+    "melf s acid arrow": "acid arrow",
+    "mordenkainen s faithful hound": "faithful hound",
+    "otiluke s freezing sphere": "freezing sphere"
+  };
+  return [...new Set([normalizeName(raw), normalized, aliases[normalized]].filter(Boolean))];
+}
+
+function classSpellLevel(entry) {
+  const name = String(entry?.name || "").toLowerCase();
+  const level = Math.max(1, Number(entry?.level || 1));
+  if (/bard|cleric|druid|sorcerer|wizard/.test(name)) return Math.min(9, Math.ceil(level / 2));
+  if (/warlock/.test(name)) return Math.min(5, Math.ceil(level / 2));
+  if (/artificer|paladin|ranger/.test(name)) return Math.min(5, level < 5 ? 1 : Math.floor((level + 3) / 4));
+  if (/barbarian|fighter|monk|rogue/.test(name)) return -1;
+  return null;
+}
+
 function normalizeName(value) { return String(value || "").toLowerCase().replace(/[’']/g, "'").replace(/[^a-z0-9]+/g, " ").trim(); }
 function slug(value) { return normalizeName(value).replaceAll(" ", "-"); }
-function sortSpells(a, b) { return a.name.localeCompare(b.name) || a.level - b.level; }
+function sortSpells(a, b) { return Number(a.level || 0) - Number(b.level || 0) || a.name.localeCompare(b.name); }
+function sortKnownSpells(a, b) { return Number(b.prepared === true) - Number(a.prepared === true) || sortSpells(a, b); }

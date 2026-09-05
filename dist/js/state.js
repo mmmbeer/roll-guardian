@@ -13,6 +13,7 @@ function defaultCharacter() {
     spellAbility: "wis",
     spellAttackBonus: null,
     spellSaveDC: null,
+    maxSpellLevel: null,
     abilities: Object.fromEntries(ABILITIES.map(a => [a.key, 10])),
     saves: { str: 0, dex: 0, con: 0, int: 0, wis: 1, cha: 0 },
     skills: Object.fromEntries(SKILLS.map(s => [s.key, s.key === "perception" ? 1 : 0])),

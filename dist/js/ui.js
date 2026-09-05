@@ -85,9 +85,9 @@ export function renderRollSubrail(state) {
     const spell = selectedSpell(state);
     const phase = spell?.attack && state.roll.spellPhase !== "damage" ? "attack" : "damage";
     const damage = spellDamage(spell, c.level, state.roll.spellSlotLevel, state.roll.spellDamageIndex);
-    return `<label class="subcontext-field spell-picker"><span>Spell</span><select data-roll-field="selectedSpellId" aria-label="Spell">${groups.known.length ? `<optgroup label="★ ${escapeHtml(c.name)}’s spells">${spellOptions(groups.known, state.roll.selectedSpellId, true)}</optgroup>` : ""}<optgroup label="SRD ${state.ruleset === "2014" ? "5.1" : "5.2.1"}">${spellOptions(groups.library, state.roll.selectedSpellId, false)}</optgroup></select></label>
+    return `<label class="subcontext-field spell-picker"><span>Spell</span><select data-roll-field="selectedSpellId" aria-label="Spell">${spellPickerGroups(groups, state)}</select></label>
       ${spell?.attack && spell.damages.length ? `<span class="subcontext-divider"></span><span class="subcontext-label">Roll</span><button class="option-chip ${phase === "attack" ? "is-active" : ""}" type="button" data-spell-phase="attack">Attack</button><button class="option-chip ${phase === "damage" ? "is-active" : ""}" type="button" data-spell-phase="damage">Damage</button>` : ""}
-      ${phase === "damage" && spell?.level > 0 ? `<label class="subcontext-field"><span>Cast</span><select data-roll-field="spellSlotLevel" aria-label="Spell slot level">${slotOptions(spell.level, state.roll.spellSlotLevel)}</select></label>` : ""}
+      ${phase === "damage" && spell?.level > 0 ? `<label class="subcontext-field"><span>Cast</span><select data-roll-field="spellSlotLevel" aria-label="Spell slot level">${slotOptions(spell.level, state.roll.spellSlotLevel, groups.maxLevel)}</select></label>` : ""}
       ${phase === "damage" && spell?.damages.length > 1 ? `<label class="subcontext-field"><span>Damage</span><select data-roll-field="spellDamageIndex" aria-label="Damage roll">${spell.damages.map((entry,index) => `<option value="${index}" ${index === Number(state.roll.spellDamageIndex) ? "selected" : ""}>${escapeHtml(entry.notation)} ${escapeHtml(entry.damageType)}</option>`).join("")}</select></label>` : ""}
       ${phase === "attack" ? `<label class="subcontext-field">Target <input data-roll-field="targetName" value="${escapeHtml(state.roll.targetName)}" placeholder="Optional"></label><label class="subcontext-field">AC <input data-roll-field="targetAC" value="${escapeHtml(state.roll.targetAC)}" type="number" min="1" max="40" placeholder="—"></label>` : ""}
       ${phase === "damage" && spell?.attack ? `<label class="subcontext-field critical-chip"><input data-roll-field="critical" type="checkbox" ${state.roll.critical ? "checked" : ""}>Critical</label>` : ""}
@@ -347,9 +347,24 @@ function labelRollType(type) { return type === "damage" ? "Damage" : type === "s
 function spellOptions(spells, selectedId, known) {
   return spells.map(spell => `<option value="${spell.id}" ${spell.id === selectedId ? "selected" : ""}>${known ? "★ " : ""}${escapeHtml(spell.name)} · ${spell.level ? `L${spell.level}` : "Cantrip"}</option>`).join("");
 }
-function slotOptions(minimum, selected) {
-  const current = Math.max(minimum, Number(selected || minimum));
-  return Array.from({ length: 10 - minimum }, (_, index) => index + minimum)
+function spellPickerGroups(groups, state) {
+  const name = escapeHtml(state.character.name);
+  const prepared = groups.known.filter(spell => spell.prepared === true);
+  const other = groups.known.filter(spell => spell.prepared !== true);
+  const characterGroups = [
+    prepared.length ? `<optgroup label="★ ${name}’s prepared spells">${spellOptions(prepared, state.roll.selectedSpellId, true)}</optgroup>` : "",
+    other.length ? `<optgroup label="★ ${name}’s ${prepared.length ? "other spells" : "spells"}">${spellOptions(other, state.roll.selectedSpellId, true)}</optgroup>` : ""
+  ].join("");
+  const access = groups.maxLevel == null ? "" : groups.maxLevel < 0 ? " · no class spell slots" : groups.maxLevel === 0 ? " · cantrips" : ` · through L${groups.maxLevel}`;
+  const library = groups.library.length
+    ? `<optgroup label="Available SRD ${state.ruleset === "2014" ? "5.1" : "5.2.1"}${access}">${spellOptions(groups.library, state.roll.selectedSpellId, false)}</optgroup>`
+    : "";
+  return characterGroups + library || '<option value="">No rollable spells available</option>';
+}
+function slotOptions(minimum, selected, maximum = null) {
+  const limit = maximum == null ? 9 : Math.max(minimum, Math.min(9, maximum));
+  const current = Math.min(limit, Math.max(minimum, Number(selected || minimum)));
+  return Array.from({ length: limit - minimum + 1 }, (_, index) => index + minimum)
     .map(level => `<option value="${level}" ${level === current ? "selected" : ""}>Level ${level}</option>`).join("");
 }
 function title(value) { return String(value).replace(/(^|-)\w/g, text => text.replace("-", " ").toUpperCase()); }
