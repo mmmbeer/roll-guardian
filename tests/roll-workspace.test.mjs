@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { buildRollPlan } from "../dist/js/roll-engine.js";
 import { createDefaultState } from "../dist/js/state.js";
+import { appearanceMarkup, DICE_MATERIALS, materialById } from "../dist/js/dice-materials.js";
 import { renderDiceLoadout, renderModifierPopover, renderRollSubrail, rollFamily } from "../dist/js/ui.js";
 
 test("weapon contexts share one bottom-rail family", () => {
@@ -86,4 +87,19 @@ test("roll rails include initiative, straight checks, and death saves", () => {
   assert.match(renderRollSubrail(state), /Strength check/);
   state.roll.context = "save";
   assert.match(renderRollSubrail(state), /Death \+0/);
+});
+
+test("dice appearance catalog includes eight solids and ten textures", () => {
+  assert.equal(DICE_MATERIALS.filter(material => material.kind === "solid").length, 8);
+  assert.equal(DICE_MATERIALS.filter(material => material.kind === "texture").length, 10);
+  assert.ok(DICE_MATERIALS.filter(material => material.effect).length >= 5);
+  assert.equal(materialById("missing").id, "amber");
+});
+
+test("dice appearance picker identifies selections and roll effects", () => {
+  const markup = appearanceMarkup("stormglass");
+  assert.equal(markup.match(/data-dice-material=/g).length, 18);
+  assert.match(markup, /data-dice-material="stormglass"[^>]*aria-pressed="true"/);
+  assert.match(markup, /Roll effect · lightning arcs/);
+  assert.match(markup, /reduced-motion/);
 });

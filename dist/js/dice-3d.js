@@ -1,11 +1,13 @@
 import { faceIndexForValue, labelForFace, shapeForSides } from "./dice-shapes.js?v=1.3.1";
 import { createMotionPaths, motionPosition } from "./dice-motion.js?v=1.3.2";
+import { drawRollEffect, labelPalette, materialById, paintFace } from "./dice-materials.js?v=1.4.0";
 
 export function createDiceTray(canvas) {
   const ctx = canvas.getContext("2d", { alpha: true });
   let dice = [];
   let frame = null;
   let running = false;
+  let appearance = materialById("amber");
   const motionReduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   function resize() {
@@ -28,7 +30,7 @@ export function createDiceTray(canvas) {
       const resultFace = faceIndexForValue(resolved.shape, result.sides, result.value);
       return {
         sides: Number(result.sides), shape: resolved.shape, value: result.value, resultFace,
-        color: colorFor(result.sides, index), size: maxSize,
+        material: appearance, size: maxSize, trail: [], effects: !motionReduced,
         motion: motionPaths[index],
         startRotation: quaternionFromEuler(Math.random()*6, Math.random()*6, Math.random()*6),
         endRotation: resultRotation(resolved.shape, resultFace, index),
@@ -55,7 +57,7 @@ export function createDiceTray(canvas) {
   function draw(now = performance.now(), started = now - 9999) {
     const rect = canvas.getBoundingClientRect();
     ctx.clearRect(0, 0, rect.width, rect.height);
-    dice.forEach((die, index) => drawDie(die, progress(die, now, started), ctx, index));
+    dice.forEach((die, index) => drawDie(die, progress(die, now, started), ctx, index, now - started >= die.delay));
   }
 
   function destroy() {
@@ -63,12 +65,18 @@ export function createDiceTray(canvas) {
     resizeObserver.disconnect();
   }
 
+  function setAppearance(materialId) {
+    appearance = materialById(materialId);
+    dice.forEach(die => { die.material = appearance; });
+    draw(performance.now());
+  }
+
   const resizeObserver = new ResizeObserver(resize);
   resizeObserver.observe(canvas);
-  return { roll, resize, destroy, get running() { return running; } };
+  return { roll, resize, destroy, setAppearance, get running() { return running; } };
 }
 
-function drawDie(die, t, ctx, index) {
+function drawDie(die, t, ctx, index, active) {
   const position = motionPosition(die.motion, t);
   const x = position.x;
   const y = position.y;
@@ -83,6 +91,11 @@ function drawDie(die, t, ctx, index) {
     return { vertices, center, centerZ: center[2], faceIndex };
   }).filter(face => face.centerZ > -.04).sort((a, b) => a.centerZ - b.centerZ);
   const scale = die.size * (.78 + .22 * easeOut(t));
+  if (active && t < .99) {
+    die.trail.push(position);
+    if (die.trail.length > 12) die.trail.shift();
+  }
+  drawRollEffect(ctx, die.material, die, position, t, performance.now(), active);
   ctx.save();
   ctx.translate(x, y);
   ctx.globalAlpha = die.used ? 1 : .36;
@@ -92,14 +105,13 @@ function drawDie(die, t, ctx, index) {
   faces.forEach(face => {
     const normal = normalize(face.center);
     const light = clamp(.32 + Math.max(0, normal[0]*-.35 + normal[1]*-.55 + normal[2]*.8) * .72, .2, 1);
+    const projected = face.vertices.map(point => project(point, scale));
     ctx.beginPath();
-    face.vertices.forEach((point, i) => {
-      const p = project(point, scale);
+    projected.forEach((p, i) => {
       if (i) ctx.lineTo(p[0], p[1]); else ctx.moveTo(p[0], p[1]);
     });
     ctx.closePath();
-    ctx.fillStyle = shade(die.color, light);
-    ctx.fill();
+    paintFace(ctx, die.material, projected, light, die.sides * 100 + face.faceIndex * 17 + index, performance.now());
     ctx.shadowColor = "transparent";
     ctx.strokeStyle = face.faceIndex === die.resultFace && t > .78 ? "rgba(255,213,116,.9)" : "rgba(255,255,255,.32)";
     ctx.lineWidth = face.faceIndex === die.resultFace && t > .78 ? 2 : 1;
@@ -122,9 +134,10 @@ function drawFaceLabel(ctx, die, face, scale, t) {
   ctx.shadowColor = "rgba(0,0,0,.55)";
   ctx.shadowBlur = 3;
   ctx.lineJoin = "round";
-  ctx.strokeStyle = "rgba(7,12,18,.72)";
+  const palette = labelPalette(die.material);
+  ctx.strokeStyle = palette.stroke;
   ctx.lineWidth = Math.max(2, fontSize * .15);
-  ctx.fillStyle = "#fff7e6";
+  ctx.fillStyle = palette.fill;
   ctx.font = `800 ${fontSize}px ui-monospace, SFMono-Regular, Menlo, monospace`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
@@ -199,17 +212,6 @@ function slerp(a,b,t) {
 function normalizeQuaternion(quaternion) {
   const length = Math.hypot(...quaternion) || 1;
   return quaternion.map(value => value / length);
-}
-
-function colorFor(sides, index) {
-  const colors = ["#dba046", "#4ca8ba", "#b66464", "#718fcb", "#9b73bd", "#65a77e"];
-  return colors[(index + sides) % colors.length];
-}
-
-function shade(hex, amount) {
-  const value = parseInt(hex.slice(1), 16);
-  const channels = [value >> 16, value >> 8 & 255, value & 255].map(c => Math.round(clamp(c * amount, 0, 255)));
-  return `rgb(${channels.join(",")})`;
 }
 
 function easeOut(t) { return 1 - Math.pow(1 - clamp(t, 0, 1), 3); }

@@ -34,6 +34,7 @@ export function createDefaultState() {
     customEffects: [],
     effectConfig: {},
     sound: true,
+    diceAppearance: { material: "amber" },
     roll: {
       context: "attack",
       modeOverride: null,

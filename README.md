@@ -18,6 +18,7 @@ The roll view is organized as a full-viewport dice platform. Modifier groups and
 - Client-side D&D Beyond PDF and JSON character import
 - Local character storage, backup export/import, and roll history
 - Canvas-rendered 3D polyhedral dice whose final faces drive the calculated result
+- Eight solid dice colors and ten procedural materials, including reduced-motion-aware roll effects
 
 ## Run locally
 

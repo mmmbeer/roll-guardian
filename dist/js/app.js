@@ -1,4 +1,5 @@
-import { createDiceTray, playDiceSound } from "./dice-3d.js?v=1.3.2";
+import { createDiceTray, playDiceSound } from "./dice-3d.js?v=1.4.0";
+import { createDiceAppearanceController } from "./dice-materials.js?v=1.4.0";
 import { importCharacterFile } from "./importer.js?v=1.3.0";
 import { buildRollPlan, effectCatalog, executeRoll, rerollOutcome } from "./roll-engine.js?v=1.3.0";
 import { DAMAGE_TYPES } from "./rules-data.js?v=1.3.0";
@@ -17,9 +18,9 @@ let modifierPicker = null;
 let lastRoll = null;
 let lastRollHistoryId = null;
 const tray = createDiceTray($("#diceCanvas"));
+createDiceAppearanceController({ getState: () => state, tray, save: () => saveState(state), openModal, toast });
 renderAll();
 bindEvents();
-
 function renderAll() {
   $("#rulesetSelect").value = state.ruleset;
   renderNavigation();
