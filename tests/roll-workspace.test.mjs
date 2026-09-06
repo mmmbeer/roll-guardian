@@ -2,8 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { buildRollPlan } from "../dist/js/roll-engine.js";
 import { createDefaultState } from "../dist/js/state.js";
-import { appearanceMarkup, DICE_MATERIALS, materialById } from "../dist/js/dice-materials.js";
-import { PARTICLE_PROFILES, particleProfile } from "../dist/js/dice-particles.js";
+import { appearanceMarkup, diceTheme, DICE_MATERIALS, materialById } from "../dist/js/dice-materials.js";
+import { PARTICLE_PROFILES, particleProfile } from "../dist/js/dice-particle-profiles.js";
 import { renderDiceLoadout, renderModifierPopover, renderRollSubrail, rollFamily } from "../dist/js/ui.js";
 
 test("weapon contexts share one bottom-rail family", () => {
@@ -105,13 +105,23 @@ test("dice appearance picker identifies selections and roll effects", () => {
   assert.match(markup, /reduced-motion/);
 });
 
-test("each animated material uses a configured Proton emitter profile", () => {
+test("each animated material uses a restrained GPU particle profile", () => {
   const effects = DICE_MATERIALS.map(material => material.effect).filter(Boolean);
   assert.deepEqual(effects.sort(), Object.keys(PARTICLE_PROFILES).sort());
   effects.forEach(effect => {
     const profile = particleProfile(effect);
     assert.ok(profile.life[0] > 0);
     assert.ok(profile.rate[1] <= 4);
-    assert.ok(profile.stopAt < .9);
+    assert.ok(profile.duration < 1);
+    assert.match(profile.blend, /Blending$/);
+  });
+});
+
+test("every catalog entry provides a Dice Box PBR theme", () => {
+  DICE_MATERIALS.forEach(material => {
+    const theme = diceTheme(material);
+    assert.equal(theme.texture, material.texture);
+    assert.equal(theme.material, material.surface);
+    assert.match(theme.background, /^#[0-9a-f]{6}$/i);
   });
 });

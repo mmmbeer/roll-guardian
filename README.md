@@ -17,8 +17,8 @@ The roll view is organized as a full-viewport dice platform. Modifier groups and
 - Skill checks, straight ability checks, Initiative, ability saving throws, and death saving throws
 - Client-side D&D Beyond PDF and JSON character import
 - Local character storage, backup export/import, and roll history
-- Canvas-rendered 3D polyhedral dice whose final faces drive the calculated result
-- Eight solid dice colors and ten procedural materials with Proton-powered, reduced-motion-aware roll effects
+- Physics-based WebGL polyhedral dice whose final faces match the calculated result
+- Eight solid finishes and ten texture-mapped materials with Three Nebula GPU roll effects
 
 ## Run locally
 
@@ -28,9 +28,7 @@ Serve the `dist` directory with any static web server, or run:
 npm run dev
 ```
 
-No application build step is required.
-
-The Proton particle engine is vendored with the application, so dice effects do not require CDN access or runtime network requests.
+Rebuild the checked-in distribution after dependency or vendor changes with `npm run build`. The WebGL dice, physics, textures, and particle runtime are bundled locally, so rolls do not require CDN access or runtime network requests.
 
 ## Cloudflare Pages
 

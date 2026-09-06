@@ -1,214 +1,183 @@
-// Proton v7.1.5 adapter. Emitter behavior follows the library's MIT-licensed
-// flame, sparks, snow, drift, and custom-renderer examples.
-export const PARTICLE_PROFILES = Object.freeze({
-  shimmer: profile({ rate: [1,2], interval: [.05,.085], life: [.22,.42], radius: [.7,2.1], speed: [.08,.34], angle: [0,360], color: ["#e9ffd2","#62d89a"], alpha: [.55,0], scale: [1.35,.1], drift: [5,5,.06], shape: "flare", blend: "lighter", blur: 3, stopAt: .79 }),
-  comet: profile({ rate: [2,4], interval: [.026,.046], life: [.28,.55], radius: [.65,2.4], speed: [.05,.32], angle: [0,360], color: ["#ffffff","#72aaff"], alpha: [.82,0], scale: [1.3,.08], drift: [3,3,.05], shape: "star", blend: "lighter", blur: 4, stopAt: .82 }),
-  embers: profile({ rate: [1,3], interval: [.038,.07], life: [.36,.74], radius: [.7,2.3], speed: [.55,1.25], angle: [-24,24], color: ["#ffe58a","#e74419"], alpha: [.88,0], scale: [1.15,.06], drift: [9,4,.045], gravity: -.12, shape: "ember", blend: "lighter", blur: 4, stopAt: .76 }),
-  snow: profile({ rate: [1,2], interval: [.055,.09], life: [.48,.86], radius: [1.2,2.7], speed: [.18,.58], angle: [155,205], color: ["#ffffff","#8ed9ef"], alpha: [.68,0], scale: [.9,.18], drift: [7,3,.08], shape: "snow", blend: "screen", blur: 1.5, stopAt: .74 }),
-  lightning: profile({ rate: [1,2], interval: [.026,.052], life: [.12,.26], radius: [.75,1.65], speed: [1.2,2.7], angle: [0,360], color: ["#ffffff","#69bfff"], alpha: [.96,0], scale: [1,.12], drift: [18,18,.025], shape: "electric", blend: "lighter", blur: 5, stopAt: .84 }),
-  glyphs: profile({ rate: [1,1], interval: [.085,.13], life: [.42,.72], radius: [3.2,5.2], speed: [.3,.68], angle: [0,360], color: ["#fff1af","#c88bff"], alpha: [.72,0], scale: [.75,.2], cyclone: ["right",.55], rotate: [0,7], shape: "glyph", blend: "lighter", blur: 2.5, stopAt: .72 })
-});
+import {
+  Alpha, Color, Emitter, Force, GPURenderer, Life, Mass, Position,
+  RadialVelocity, Radius, RandomDrift, Rate, Rotate, Scale, Span,
+  SphereZone, System, Texture, THREE, Vector3D
+} from "../vendor/dice-runtime.js";
+import { particleProfile } from "./dice-particle-profiles.js?v=1.5.0";
 
-export function particleProfile(effectId) {
-  return PARTICLE_PROFILES[effectId] || null;
-}
-
-export function createDiceParticleSystem(canvas) {
+export function createDiceParticleSystem(box) {
   const reduced = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-  if (!canvas || reduced || typeof globalThis.Proton !== "function") return noParticleSystem();
-  return new DiceParticleSystem(canvas, globalThis.Proton);
+  if (!box?.scene || reduced) return noParticleSystem();
+  return new DiceParticleSystem(box);
 }
 
 class DiceParticleSystem {
-  constructor(canvas, Proton) {
-    this.canvas = canvas;
-    this.Proton = Proton;
-    this.proton = new Proton();
+  constructor(box) {
+    this.box = box;
+    this.system = null;
     this.emitters = [];
     this.frame = null;
-    this.profile = null;
-    this.ratio = 1;
-    Proton.USE_CLOCK = true;
-    this.renderer = createRenderer(canvas, Proton, () => this.ratio);
-    this.proton.addRenderer(this.renderer);
-    this.resize();
+    this.stopTimer = null;
+    this.lastFrame = 0;
   }
 
-  resize(width, height) {
-    const rect = this.canvas.getBoundingClientRect();
-    const cssWidth = Math.max(1, width || rect.width);
-    const cssHeight = Math.max(1, height || rect.height);
-    this.ratio = Math.min(2, globalThis.devicePixelRatio || 1);
-    this.canvas.width = Math.round(cssWidth * this.ratio);
-    this.canvas.height = Math.round(cssHeight * this.ratio);
-  }
-
-  begin(effectId, count, size) {
+  begin(effectId, diceCount) {
     this.clear();
-    this.profile = particleProfile(effectId);
-    if (!this.profile) return;
-    this.emitters = Array.from({ length: count }, () => this.makeEmitter(count, size));
+    const spec = particleProfile(effectId);
+    if (!spec) return;
+    try {
+      this.start(spec, diceCount);
+    } catch (error) {
+      this.clear();
+      console.error("GPU particle renderer could not initialize", error);
+    }
   }
 
-  track(index, position, progress, active) {
-    const emitter = this.emitters[index];
-    if (!emitter || !active) return;
-    emitter.p.x = position.x;
-    emitter.p.y = position.y;
-    if (progress < this.profile.stopAt && !emitter.started) {
-      emitter.started = true;
-      emitter.emit();
-      this.ensureLoop();
-    } else if (progress >= this.profile.stopAt && !emitter.stoped) emitter.stop();
+  start(spec, diceCount) {
+    const density = diceCount > 10 ? .42 : diceCount > 6 ? .58 : diceCount > 3 ? .76 : 1;
+    const renderer = new GPURenderer(this.box.scene, THREE, {
+      camera: this.box.camera,
+      maxParticles: Math.max(96, Math.round(420 * density)),
+      baseColor: 0xffffff,
+      blending: spec.blend,
+      depthTest: true,
+      depthWrite: false,
+      transparent: true
+    });
+    this.renderer = renderer;
+    this.system = new System(180).addRenderer(renderer);
+    const texture = makeParticleTexture(spec.shape);
+    this.emitters = this.box.diceList.slice(0, diceCount).map(die => {
+      const emitter = makeEmitter(spec, texture, density);
+      emitter.followedDie = die;
+      emitter.setPosition(die.position || die.body?.position).emit();
+      this.system.addEmitter(emitter);
+      return emitter;
+    });
+    this.stopTimer = setTimeout(() => this.emitters.forEach(emitter => emitter.stopEmit()), spec.duration * 1000);
+    this.lastFrame = performance.now();
+    this.frame = requestAnimationFrame(time => this.tick(time));
+  }
+
+  tick(time) {
+    if (!this.system) return;
+    const delta = Math.min(.05, Math.max(0, (time - this.lastFrame) / 1000));
+    this.lastFrame = time;
+    this.emitters.forEach(emitter => {
+      const position = emitter.followedDie?.body?.position || emitter.followedDie?.position;
+      if (position) emitter.setPosition(position);
+    });
+    if (this.renderer) this.renderer.camera = this.box.camera;
+    this.system.tick(delta);
+    this.box.renderer?.render(this.box.scene, this.box.camera);
+    if (this.system.getCount() || this.emitters.some(emitter => emitter.isEmitting)) {
+      this.frame = requestAnimationFrame(next => this.tick(next));
+    } else this.clear();
   }
 
   finish() {
-    this.emitters.forEach(emitter => emitter.stop());
-    if (!this.proton.getCount()) this.clear();
-  }
-
-  destroy() {
-    this.clear();
-    this.proton.destroy();
-  }
-
-  makeEmitter(count, size) {
-    const P = this.Proton;
-    const spec = this.profile;
-    const density = count > 10 ? .48 : count > 6 ? .66 : count > 3 ? .82 : 1;
-    const emitter = new P.Emitter();
-    emitter.damping = .014;
-    const burst = [Math.max(1, Math.round(spec.rate[0] * density)), Math.max(1, Math.round(spec.rate[1] * density))];
-    const intervalScale = count > 8 ? 1.3 : count > 4 ? 1.14 : 1;
-    emitter.rate = new P.Rate(new P.Span(...burst), new P.Span(spec.interval[0] * intervalScale, spec.interval[1] * intervalScale));
-    emitter.addInitialize(new P.Mass(1), new P.Radius(spec.radius[0] * size / 56, spec.radius[1] * size / 56), new P.Life(...spec.life), new P.Velocity(new P.Span(...spec.speed), new P.Span(...spec.angle), "polar"));
-    emitter.addBehaviour(new P.Color(...spec.color), new P.Alpha(...spec.alpha, Infinity, P.easeOutCubic), new P.Scale(...spec.scale, Infinity, P.easeOutQuart));
-    if (spec.drift) emitter.addBehaviour(new P.RandomDrift(...spec.drift));
-    if (spec.gravity) emitter.addBehaviour(new P.Gravity(spec.gravity));
-    if (spec.cyclone) emitter.addBehaviour(new P.Cyclone(...spec.cyclone));
-    if (spec.rotate) emitter.addBehaviour(new P.Rotate(spec.rotate[0], spec.rotate[1], "add"));
-    emitter.effectId = spec.shape;
-    emitter.renderProfile = spec;
-    emitter.started = false;
-    this.proton.addEmitter(emitter);
-    return emitter;
-  }
-
-  ensureLoop() {
-    if (this.frame) return;
-    const tick = () => {
-      this.proton.update();
-      const emitting = this.emitters.some(emitter => emitter.started && !emitter.stoped);
-      if (!emitting && !this.proton.getCount()) { this.clear(); return; }
-      this.frame = requestAnimationFrame(tick);
-    };
-    this.frame = requestAnimationFrame(tick);
+    this.emitters.forEach(emitter => emitter.stopEmit());
   }
 
   clear() {
     if (this.frame) cancelAnimationFrame(this.frame);
+    if (this.stopTimer) clearTimeout(this.stopTimer);
     this.frame = null;
-    this.emitters.forEach(emitter => {
-      emitter.removeAllParticles();
-      if (emitter.parent) this.proton.removeEmitter(emitter);
-    });
+    this.stopTimer = null;
     this.emitters = [];
-    clearCanvas(this.canvas);
+    this.system?.destroy();
+    this.system = null;
+    this.renderer = null;
   }
+
+  destroy() { this.clear(); }
 }
 
-function createRenderer(canvas, Proton, getRatio) {
-  const renderer = new Proton.CustomRenderer(canvas);
-  const ctx = canvas.getContext("2d", { alpha: true });
-  renderer.onProtonUpdate = () => {
-    ctx.setTransform(1,0,0,1,0,0);
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    const ratio = getRatio();
-    ctx.setTransform(ratio,0,0,ratio,0,0);
-  };
-  renderer.onParticleCreated = particle => {
-    particle.data.seed = Math.random() * Math.PI * 2;
-    particle.data.shape = particle.parent.effectId;
-    particle.data.profile = particle.parent.renderProfile;
-  };
-  renderer.onParticleUpdate = particle => drawParticle(ctx, particle);
-  return renderer;
+function makeEmitter(spec, texture, density) {
+  const amount = [
+    Math.max(1, Math.round(spec.rate[0] * density)),
+    Math.max(1, Math.round(spec.rate[1] * density))
+  ];
+  const emitter = new Emitter().setRate(new Rate(new Span(...amount), new Span(...spec.interval)));
+  emitter.damping = .012;
+  emitter.setInitializers([
+    new Position(new SphereZone(0, 0, 0, 10)),
+    new Mass(1),
+    new Radius(spec.radius[0] * 4.5, spec.radius[1] * 4.5),
+    new Life(...spec.life),
+    new RadialVelocity(new Span(...spec.speed), new Vector3D(0, 0, 1), spec.spread),
+    new Texture(THREE, texture, { transparent: true, depthWrite: false })
+  ]);
+  const behaviours = [
+    new Alpha(...spec.alpha),
+    new Scale(...spec.scale),
+    new Color(...spec.color)
+  ];
+  if (spec.drift) behaviours.push(new RandomDrift(...spec.drift));
+  if (spec.force) behaviours.push(new Force(...spec.force));
+  if (spec.rotate) behaviours.push(new Rotate(spec.rotate[0], spec.rotate[1], spec.rotate[1]));
+  return emitter.setBehaviours(behaviours);
 }
 
-function drawParticle(ctx, particle) {
-  const shape = particle.data.shape;
-  const color = `rgb(${particle.rgb.r},${particle.rgb.g},${particle.rgb.b})`;
-  const radius = Math.max(.45, particle.radius);
-  const profile = particle.data.profile;
-  ctx.save();
-  ctx.globalAlpha = particle.alpha;
-  ctx.globalCompositeOperation = profile?.blend || "source-over";
-  ctx.strokeStyle = color;
-  ctx.fillStyle = color;
-  ctx.shadowColor = color;
-  ctx.shadowBlur = radius * (profile?.blur || 2);
+function makeParticleTexture(shape) {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 128;
+  const ctx = canvas.getContext("2d");
+  ctx.translate(64, 64);
+  const glow = ctx.createRadialGradient(0, 0, 2, 0, 0, 58);
+  glow.addColorStop(0, "rgba(255,255,255,1)");
+  glow.addColorStop(.16, "rgba(255,255,255,.9)");
+  glow.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = glow;
+  if (shape === "star") drawStar(ctx);
+  else if (shape === "ember" || shape === "electric") drawStreak(ctx, shape === "electric");
+  else if (shape === "crystal") drawCrystal(ctx);
+  else if (shape === "glyph") drawGlyph(ctx);
+  else { ctx.beginPath(); ctx.arc(0, 0, 58, 0, Math.PI * 2); ctx.fill(); }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function drawStar(ctx) {
+  ctx.beginPath();
+  for (let index = 0; index < 16; index += 1) {
+    const radius = index % 2 ? 13 : index % 4 ? 33 : 58;
+    const angle = index * Math.PI / 8 - Math.PI / 2;
+    ctx[index ? "lineTo" : "moveTo"](Math.cos(angle) * radius, Math.sin(angle) * radius);
+  }
+  ctx.closePath(); ctx.fill();
+}
+
+function drawStreak(ctx, electric) {
+  ctx.rotate(-.58);
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
-  if (shape === "star") drawStar(ctx, particle.p.x, particle.p.y, radius, particle.data.seed);
-  else if (shape === "ember") drawEmber(ctx, particle, radius);
-  else if (shape === "snow") drawSnow(ctx, particle.p.x, particle.p.y, radius, particle.data.seed);
-  else if (shape === "electric") drawElectric(ctx, particle, radius);
-  else if (shape === "glyph") drawGlyph(ctx, particle.p.x, particle.p.y, radius, particle.rotation);
-  else drawFlare(ctx, particle.p.x, particle.p.y, radius, particle.data.seed);
-  ctx.restore();
-}
-
-function drawStar(ctx, x, y, radius, rotation) {
-  ctx.save(); ctx.translate(x,y); ctx.rotate(rotation); ctx.lineWidth = Math.max(.6,radius*.38);
-  ctx.beginPath(); ctx.moveTo(-radius*2.2,0); ctx.lineTo(radius*2.2,0); ctx.moveTo(0,-radius*2.2); ctx.lineTo(0,radius*2.2); ctx.stroke();
-  ctx.beginPath(); ctx.arc(0,0,radius*.72,0,Math.PI*2); ctx.fill(); ctx.restore();
-}
-
-function drawEmber(ctx, particle, radius) {
-  const dx = particle.p.x - particle.old.p.x;
-  const dy = particle.p.y - particle.old.p.y;
-  ctx.lineWidth = Math.max(.7,radius*1.05);
-  ctx.beginPath(); ctx.moveTo(particle.p.x-dx*3.2,particle.p.y-dy*3.2); ctx.lineTo(particle.p.x,particle.p.y); ctx.stroke();
-  ctx.beginPath(); ctx.arc(particle.p.x,particle.p.y,radius*.58,0,Math.PI*2); ctx.fill();
-}
-
-function drawSnow(ctx, x, y, radius, rotation) {
-  ctx.save(); ctx.translate(x,y); ctx.rotate(rotation); ctx.lineWidth = Math.max(.45,radius*.28);
+  ctx.strokeStyle = "white";
+  ctx.lineWidth = electric ? 9 : 15;
+  ctx.shadowColor = "white";
+  ctx.shadowBlur = 18;
   ctx.beginPath();
-  for (let arm=0; arm<3; arm+=1) { const angle=arm*Math.PI/3; ctx.moveTo(Math.cos(angle)*-radius*1.35,Math.sin(angle)*-radius*1.35); ctx.lineTo(Math.cos(angle)*radius*1.35,Math.sin(angle)*radius*1.35); }
-  ctx.stroke(); ctx.restore();
+  ctx.moveTo(-54, electric ? 18 : 0);
+  if (electric) { ctx.lineTo(-18, -10); ctx.lineTo(5, 8); ctx.lineTo(52, -16); }
+  else ctx.lineTo(52, 0);
+  ctx.stroke();
 }
 
-function drawElectric(ctx, particle, radius) {
-  const phase = particle.data.seed + particle.age*48;
-  const length = radius*5.5;
-  const angle = Math.atan2(particle.v.y,particle.v.x);
-  const nx = Math.cos(angle), ny = Math.sin(angle), px = -ny, py = nx;
-  ctx.lineWidth = Math.max(.7,radius*.58);
-  ctx.beginPath(); ctx.moveTo(particle.p.x-nx*length*.5,particle.p.y-ny*length*.5);
-  ctx.lineTo(particle.p.x+px*Math.sin(phase)*radius*1.2,particle.p.y+py*Math.sin(phase)*radius*1.2);
-  ctx.lineTo(particle.p.x+nx*length*.5,particle.p.y+ny*length*.5); ctx.stroke();
+function drawCrystal(ctx) {
+  ctx.strokeStyle = "white"; ctx.lineWidth = 6; ctx.lineCap = "round";
+  for (let arm = 0; arm < 3; arm += 1) {
+    ctx.rotate(Math.PI / 3); ctx.beginPath(); ctx.moveTo(-42, 0); ctx.lineTo(42, 0); ctx.stroke();
+  }
+  ctx.beginPath(); ctx.arc(0, 0, 11, 0, Math.PI * 2); ctx.fill();
 }
 
-function drawGlyph(ctx, x, y, radius, rotation) {
-  ctx.save(); ctx.translate(x,y); ctx.rotate(rotation*Math.PI/180); ctx.lineWidth = Math.max(.7,radius*.24);
-  ctx.beginPath(); ctx.moveTo(0,-radius); ctx.lineTo(radius*.8,0); ctx.lineTo(0,radius); ctx.lineTo(-radius*.8,0); ctx.closePath();
-  ctx.moveTo(-radius*.45,0); ctx.lineTo(radius*.45,0); ctx.moveTo(0,-radius*.55); ctx.lineTo(0,radius*.55); ctx.stroke(); ctx.restore();
-}
-
-function drawFlare(ctx, x, y, radius, rotation) {
-  ctx.save(); ctx.translate(x,y); ctx.rotate(rotation); ctx.lineWidth = Math.max(.5,radius*.3);
-  ctx.beginPath(); ctx.moveTo(-radius*1.7,0); ctx.lineTo(radius*1.7,0); ctx.moveTo(0,-radius*.8); ctx.lineTo(0,radius*.8); ctx.stroke(); ctx.restore();
-}
-
-function clearCanvas(canvas) {
-  const ctx = canvas.getContext("2d");
-  ctx.setTransform(1,0,0,1,0,0);
-  ctx.clearRect(0,0,canvas.width,canvas.height);
+function drawGlyph(ctx) {
+  ctx.strokeStyle = "white"; ctx.lineWidth = 6; ctx.lineJoin = "round";
+  ctx.beginPath(); ctx.moveTo(0, -48); ctx.lineTo(38, 0); ctx.lineTo(0, 48); ctx.lineTo(-38, 0); ctx.closePath();
+  ctx.moveTo(-23, 0); ctx.lineTo(23, 0); ctx.moveTo(0, -27); ctx.lineTo(0, 27); ctx.stroke();
 }
 
 function noParticleSystem() {
-  return { resize() {}, begin() {}, track() {}, finish() {}, destroy() {} };
+  return { begin() {}, finish() {}, destroy() {} };
 }
-
-function profile(values) { return Object.freeze(values); }

@@ -70,7 +70,8 @@ h2 { margin: 0; font-size: 1rem; }
 .dice-stage { position: absolute; inset: 0; overflow: hidden; }
 .dice-stage::after { content: ""; position: absolute; right: 18%; bottom: 8%; left: 18%; height: 15%; border-radius: 50%; background: rgba(0,0,0,.27); filter: blur(30px); pointer-events: none; }
 #diceCanvas { position: absolute; z-index: 2; inset: 0; width: 100%; height: 100%; }
-#diceEffectsCanvas { position: absolute; z-index: 3; inset: 0; width: 100%; height: 100%; mix-blend-mode: screen; pointer-events: none; }
+#diceCanvas > canvas { display: block; width: 100%; height: 100%; pointer-events: none; }
+#diceCanvas[data-renderer="unavailable"]::after { content: "3D dice unavailable"; position: absolute; inset: 50% auto auto 50%; transform: translate(-50%,-50%); color: var(--muted); font-size: .75rem; }
 .dice-preview { position: absolute; z-index: 4; inset: clamp(92px, 18vh, 145px) 92px 70px; display: flex; flex-wrap: wrap; align-content: center; align-items: center; justify-content: center; gap: clamp(12px, 2vw, 24px); transition: opacity .18s ease; }
 .dice-preview[hidden] { display: none; }
 .die-token { position: relative; display: grid; flex: 0 0 auto; place-items: center; width: clamp(74px, 8vw, 104px); height: clamp(74px, 8vw, 104px); background: linear-gradient(145deg, #f0b858, #bd7625); color: #241506; clip-path: polygon(50% 0,94% 25%,84% 78%,50% 100%,15% 78%,6% 25%); filter: drop-shadow(0 12px 12px rgba(0,0,0,.3)); }
@@ -233,18 +234,22 @@ kbd { padding: 2px 6px; border: 1px solid rgba(36,21,6,.3); border-radius: 4px; 
 .material-option strong { font-size: .82rem; }
 .material-option small { margin-top: 3px; color: var(--muted); font-size: .69rem; line-height: 1.25; }
 .material-option .effect-label { color: var(--accent-strong); }
-.material-swatch { position: relative; width: 44px; height: 44px; overflow: hidden; border: 1px solid rgba(255,255,255,.24); border-radius: 9px; background: linear-gradient(145deg,color-mix(in srgb,var(--swatch),white 28%),var(--swatch) 55%,color-mix(in srgb,var(--swatch),black 35%)); box-shadow: inset -7px -8px 11px rgba(0,0,0,.2); }
-.material-swatch::after { content: ""; position: absolute; inset: 0; opacity: .65; }
-.pattern-scale::after { background: radial-gradient(circle at 50% 0,transparent 44%,rgba(226,255,222,.5) 46% 49%,transparent 51%) 0 0/14px 11px; }
-.pattern-stars::after { background: radial-gradient(circle at 25% 25%,#fff 0 1px,transparent 2px),radial-gradient(circle at 70% 65%,#acd4ff 0 1.5px,transparent 2.5px),radial-gradient(circle at 82% 18%,#fff 0 1px,transparent 2px); }
-.pattern-molten::after { background: linear-gradient(115deg,transparent 40%,#ff8a32 42% 45%,transparent 47%),linear-gradient(45deg,transparent 58%,#ffc75a 60% 63%,transparent 65%); }
-.pattern-frost::after { background: repeating-linear-gradient(125deg,transparent 0 8px,rgba(242,255,255,.65) 9px,transparent 11px); }
-.pattern-storm::after { background: linear-gradient(115deg,transparent 42%,#d9efff 44% 47%,transparent 49%),linear-gradient(65deg,transparent 55%,rgba(187,224,255,.7) 57% 59%,transparent 61%); }
-.pattern-bone::after { background: radial-gradient(circle at 25% 30%,rgba(45,34,22,.4) 0 2px,transparent 3px),radial-gradient(circle at 72% 67%,rgba(45,34,22,.35) 0 3px,transparent 4px); }
-.pattern-wood::after { background: repeating-radial-gradient(ellipse at 64% 48%,transparent 0 5px,rgba(255,220,168,.28) 6px 7px,transparent 8px 12px); }
-.pattern-marble::after { background: linear-gradient(130deg,transparent 25%,rgba(37,42,50,.45) 27%,transparent 30% 62%,rgba(255,255,255,.3) 64%,transparent 67%); }
-.pattern-verdigris::after { background: radial-gradient(circle at 28% 30%,rgba(184,121,56,.55),transparent 24%),radial-gradient(circle at 75% 72%,rgba(190,130,63,.5),transparent 21%); }
-.pattern-runes::after { background: repeating-linear-gradient(60deg,transparent 0 9px,rgba(255,221,139,.45) 10px,transparent 12px 18px); }
+.material-swatch { position: relative; isolation: isolate; width: 44px; height: 44px; overflow: hidden; border: 1px solid rgba(255,255,255,.3); border-radius: 10px; background-color: var(--swatch); background-image: var(--texture-image),linear-gradient(145deg,color-mix(in srgb,var(--swatch),white 25%),var(--swatch) 54%,color-mix(in srgb,var(--swatch),black 38%)); background-position: center; background-size: cover; background-blend-mode: multiply,normal; box-shadow: inset 7px 7px 12px rgba(255,255,255,.13),inset -10px -11px 14px rgba(0,0,0,.38),0 5px 12px rgba(0,0,0,.24); }
+.material-swatch::before { content: ""; position: absolute; z-index: 1; inset: 0; background: linear-gradient(135deg,rgba(255,255,255,.3),transparent 35%,rgba(0,0,0,.28) 78%); mix-blend-mode: soft-light; }
+.material-swatch::after { content: ""; position: absolute; z-index: 2; width: 5px; height: 5px; border-radius: 50%; opacity: 0; background: white; box-shadow: 0 0 7px 2px currentColor; }
+.material-swatch i { position: absolute; z-index: 2; inset: 5px; border: 1px solid rgba(255,255,255,.1); border-radius: 7px; pointer-events: none; }
+.effect-shimmer::after { top: 9px; left: 8px; color: #b9ffd8; animation: swatch-glint 2.1s ease-in-out infinite; }
+.effect-comet::after { top: 12px; left: 7px; color: #9dbdff; box-shadow: 0 0 8px 2px currentColor,-8px 8px 8px currentColor; animation: swatch-comet 2.4s ease-in-out infinite; }
+.effect-embers::after { right: 9px; bottom: 8px; color: #ff873d; animation: swatch-ember 1.35s ease-in-out infinite; }
+.effect-snow::after { top: 8px; left: 19px; color: #dffbff; animation: swatch-snow 2.2s linear infinite; }
+.effect-lightning::after { top: 8px; right: 8px; width: 2px; height: 25px; border-radius: 0; color: #91ceff; transform: rotate(32deg); animation: swatch-flash 2.6s steps(1) infinite; }
+.effect-glyphs::after { top: 8px; left: 8px; width: 25px; height: 25px; border: 1px solid #f6d283; background: transparent; box-shadow: 0 0 6px rgba(246,210,131,.7); animation: swatch-orbit 4s linear infinite; }
+@keyframes swatch-glint { 0%,55%,100% { opacity: 0; transform: translate(0,12px); } 68% { opacity: .9; } 82% { opacity: 0; transform: translate(23px,-5px); } }
+@keyframes swatch-comet { 0%,58%,100% { opacity: 0; transform: translate(-8px,8px); } 70% { opacity: 1; } 84% { opacity: 0; transform: translate(26px,-13px); } }
+@keyframes swatch-ember { 0%,100% { opacity: .2; transform: translateY(3px) scale(.7); } 50% { opacity: .95; transform: translate(-5px,-12px) scale(1); } }
+@keyframes swatch-snow { 0% { opacity: 0; transform: translateY(-7px); } 25%,70% { opacity: .8; } 100% { opacity: 0; transform: translate(-9px,29px); } }
+@keyframes swatch-flash { 0%,45%,49%,100% { opacity: 0; } 46%,48% { opacity: 1; } }
+@keyframes swatch-orbit { 0% { opacity: .45; transform: rotate(0); } 50% { opacity: .9; } 100% { opacity: .45; transform: rotate(360deg); } }
 .toast-region { position: fixed; right: 18px; bottom: 18px; z-index: 130; display: grid; gap: 8px; }
 .toast { max-width: 340px; padding: 12px 15px; border: 1px solid #46617a; border-radius: 9px; background: #172331; box-shadow: var(--shadow); }
 
