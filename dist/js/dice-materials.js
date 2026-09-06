@@ -49,23 +49,37 @@ export function createDiceAppearanceController({ getState, tray, save, openModal
     const button = document.querySelector("#appearanceButton");
     if (button) button.title = `Dice appearance: ${material.name}`;
   };
-  const show = () => openModal("Dice appearance", appearanceMarkup(getState().diceAppearance?.material), '<button class="modal-button primary" type="button" data-close-modal>Done</button>');
+  let selectedId = null;
+  const show = () => {
+    selectedId = materialById(getState().diceAppearance?.material).id;
+    openModal("Dice appearance", appearanceMarkup(selectedId), '<button class="modal-button primary" type="button" data-close-modal data-modal-confirm>Done</button>', {
+      onClose: reason => {
+        if (reason === "confirm") {
+          getState().diceAppearance = { material: selectedId };
+          sync();
+          save();
+          toast(`${materialById(selectedId).name} dice selected`);
+        }
+        selectedId = null;
+      }
+    });
+  };
   document.addEventListener("click", event => {
     if (event.target.closest("#appearanceButton")) { show(); return; }
     const choice = event.target.closest("[data-dice-material]");
-    if (!choice) return;
-    const state = getState();
-    state.diceAppearance = { material: materialById(choice.dataset.diceMaterial).id };
-    sync();
-    save();
-    document.querySelector("#modalBody").innerHTML = appearanceMarkup(state.diceAppearance.material);
-    toast(`${materialById(state.diceAppearance.material).name} dice selected`);
+    if (!choice || selectedId === null) return;
+    selectedId = materialById(choice.dataset.diceMaterial).id;
+    document.querySelectorAll("#modalBody [data-dice-material]").forEach(button => {
+      const selected = button.dataset.diceMaterial === selectedId;
+      button.classList.toggle("is-selected", selected);
+      button.setAttribute("aria-pressed", String(selected));
+    });
   });
   sync();
 }
 
 export function appearanceMarkup(selectedId = "amber") {
-  return `<p class="field-note appearance-note">Choose one finish for every die. Effects are rendered in the 3D scene only while dice are moving and respect reduced-motion settings.</p>
+  return `<p class="field-note appearance-note">Choose one finish for every die, then select Done to save. Cancel keeps your current finish. Effects are rendered in the 3D scene only while dice are moving and respect reduced-motion settings.</p>
     ${materialSection("Solid colors", SOLIDS, selectedId)}
     ${materialSection("Textured dice", TEXTURES, selectedId)}`;
 }
@@ -73,8 +87,7 @@ export function appearanceMarkup(selectedId = "amber") {
 function materialSection(title, materials, selectedId) {
   return `<section class="material-section"><h3>${title}</h3><div class="material-grid">${materials.map(material => {
     const effect = material.effect ? `<small class="effect-label">Roll effect · ${effectName(material.effect)}</small>` : "";
-    const image = material.previewAsset ? `url('./assets/dice/textures/${material.previewAsset}')` : "none";
-    return `<button class="material-option ${material.id === selectedId ? "is-selected" : ""}" type="button" data-dice-material="${material.id}" aria-pressed="${material.id === selectedId}"><span class="material-swatch effect-${material.effect || "none"}" style="--swatch:${material.color};--texture-image:${image}" aria-hidden="true"><i></i></span><span><strong>${material.name}</strong><small>${material.description}</small>${effect}</span></button>`;
+    return `<button class="material-option ${material.id === selectedId ? "is-selected" : ""}" type="button" data-dice-material="${material.id}" aria-pressed="${material.id === selectedId}"><span class="material-swatch material-${material.id} effect-${material.effect || "none"}" aria-hidden="true"><i>20</i></span><span><strong>${material.name}</strong><small>${material.description}</small>${effect}</span></button>`;
   }).join("")}</div></section>`;
 }
 

@@ -1,5 +1,6 @@
+import { DICE_MATERIALS } from "../dist/js/dice-materials.js";
 import { build } from "esbuild";
-import { chmod, copyFile, mkdir } from "node:fs/promises";
+import { chmod, copyFile, mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
@@ -34,3 +35,10 @@ for (const [source, destination] of copies) {
   await copyFile(source, destination);
   await chmod(destination, 0o644);
 }
+
+// External CSS keeps samples compatible with the production style-src policy.
+const samples = DICE_MATERIALS.map(material => {
+  const image = material.previewAsset ? `url('../assets/dice/textures/${material.previewAsset}')` : "none";
+  return `.material-${material.id} { --swatch: ${material.color}; --ink: ${material.ink}; --texture-image: ${image}; }`;
+});
+await writeFile(resolve(root, "dist/css/dice-materials.css"), `${samples.join("\n")}\n`);

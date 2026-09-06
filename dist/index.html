@@ -8,7 +8,8 @@
   <meta name="description" content="A private, mobile-first 5E dice assistant for attacks, damage, spells, skills, saves, conditions, and situational modifiers.">
   <title>Roll Guardian</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath fill='%23e6a845' d='M32 3 57 18v28L32 61 7 46V18z'/%3E%3Cpath fill='%23101722' d='m32 10 17 11-6 23-11 9-11-9-6-23zm0 8-9 6 3 13h12l3-13zm0 3 5 4-2 8h-6l-2-8z'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="./css/styles.css?v=1.5.0">
+  <link rel="stylesheet" href="./css/styles.css?v=1.5.1">
+  <link rel="stylesheet" href="./css/dice-materials.css?v=1.5.1">
 </head>
 <body data-view="roll">
   <a class="skip-link" href="#main">Skip to roller</a>
@@ -80,6 +81,6 @@
   <aside class="modifier-popover" id="modifierPopover" role="dialog" aria-label="Choose modifiers" hidden><header><div><small id="popoverEyebrow">Modifiers</small><h2 id="popoverTitle">Conditions</h2></div><button class="icon-btn" id="closeModifierPopover" type="button" aria-label="Close modifier picker"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header><div class="popover-body" id="modifierPopoverBody"></div><footer><button class="text-btn" type="button" data-view-link="effects">Manage all</button><button class="text-btn" type="button" data-action="add-custom-effect">+ Custom modifier</button></footer></aside>
   <div class="modal-backdrop" id="modalBackdrop" hidden><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><header><h2 id="modalTitle"></h2><button class="icon-btn" type="button" data-close-modal aria-label="Close"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header><div class="modal-body" id="modalBody"></div><footer id="modalFooter"></footer></section></div>
   <div class="toast-region" id="toastRegion" aria-live="polite"></div>
-  <script type="module" src="./js/app.js?v=1.5.0"></script>
+  <script type="module" src="./js/app.js?v=1.5.1"></script>
 </body>
 </html>

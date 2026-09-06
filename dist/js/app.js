@@ -1,5 +1,5 @@
 import { createDiceTray, playDiceSound } from "./dice-3d.js?v=1.5.0";
-import { createDiceAppearanceController } from "./dice-materials.js?v=1.5.0";
+import { createDiceAppearanceController } from "./dice-materials.js?v=1.5.1";
 import { importCharacterFile } from "./importer.js?v=1.3.0";
 import { buildRollPlan, effectCatalog, executeRoll, rerollOutcome } from "./roll-engine.js?v=1.3.0";
 import { DAMAGE_TYPES } from "./rules-data.js?v=1.3.0";
@@ -10,7 +10,7 @@ import {
   modifierCategoryLabel, openModal, renderAppliedModifiers, renderCharacter,
   renderDiceLoadout, renderEffects, renderHistory, renderModifierPopover,
   renderRollSubrail, rollFamily, signed, spellForm, toast, weaponForm
-} from "./ui.js?v=1.3.0";
+} from "./ui.js?v=1.5.1";
 let state = loadState();
 let modalAction = null;
 let pendingImport = null;
@@ -111,7 +111,7 @@ function handleClick(event) {
   if (clearEffect) { setEffectEnabled(clearEffect.dataset.clearEffect, false); return; }
   const mode = event.target.closest("[data-mode]");
   if (mode) { state.roll.modeOverride = mode.dataset.mode; closeModifierPicker(); resetPlatform(); renderRoll(); saveState(state); return; }
-  if (event.target.closest("[data-close-modal]")) { closeModal(); return; }
+  if (event.target.closest("[data-close-modal]")) { closeModal(event.target.closest("[data-modal-confirm]") ? "confirm" : "cancel"); return; }
   if (event.target.closest("#rollButton")) { runRoll(); return; }
   if (event.target.closest('[data-action="reroll-result"]')) { openRerollDialog(); return; }
   const rerollDieButton = event.target.closest("[data-reroll-index]");

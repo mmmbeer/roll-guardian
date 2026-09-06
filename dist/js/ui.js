@@ -1,3 +1,4 @@
+export { openModal, closeModal, modalButtons } from "./modal.js?v=1.5.1";
 import { ABILITIES, CHECKS, DAMAGE_TYPES, SKILLS, WEAPON_LIBRARY } from "./rules-data.js?v=1.3.0";
 import { classSummary } from "./character-features.js?v=1.3.0";
 import { availableSpells, selectedSpell, spellDamage } from "./spell-data.js?v=1.3.0";
@@ -284,30 +285,12 @@ export function helpContent(state) {
     <div class="help-section license-copy"><h3>Open rules attribution</h3><p>This work includes material taken from the System Reference Document 5.1 (“SRD 5.1”) by Wizards of the Coast LLC and available at <a href="https://www.dndbeyond.com/srd" target="_blank" rel="noreferrer">dndbeyond.com/srd</a>. The SRD 5.1 is licensed under the <a href="https://creativecommons.org/licenses/by/4.0/legalcode" target="_blank" rel="noreferrer">Creative Commons Attribution 4.0 International License</a>.</p><p>This work includes material from the System Reference Document 5.2.1 (“SRD 5.2.1”) by Wizards of the Coast LLC, available at <a href="https://www.dndbeyond.com/srd" target="_blank" rel="noreferrer">dndbeyond.com/srd</a>. The SRD 5.2.1 is licensed under the Creative Commons Attribution 4.0 International License.</p><p>Current preset view: ${escapeHtml(state.ruleset)} rules.</p></div>`;
 }
 
-export function openModal(title, body, footer = "") {
-  $("#modalTitle").textContent = title;
-  $("#modalBody").innerHTML = body;
-  $("#modalFooter").innerHTML = footer;
-  $("#modalBackdrop").hidden = false;
-  document.body.style.overflow = "hidden";
-  requestAnimationFrame(() => $("#modalBody input, #modalBody select, #modalBody button")?.focus());
-}
-
-export function closeModal() {
-  $("#modalBackdrop").hidden = true;
-  document.body.style.overflow = "";
-}
-
 export function toast(message) {
   const element = document.createElement("div");
   element.className = "toast";
   element.textContent = message;
   $("#toastRegion").append(element);
   setTimeout(() => element.remove(), 3200);
-}
-
-export function modalButtons(primary = "Save", includeDelete = false) {
-  return `${includeDelete ? '<button class="modal-button danger" type="button" data-modal-delete>Delete</button>' : ""}<button class="modal-button" type="button" data-close-modal>Cancel</button><button class="modal-button primary" type="button" data-modal-save>${primary}</button>`;
 }
 
 export function entryValue(entries, state, effect) {
