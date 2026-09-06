@@ -1,9 +1,10 @@
-export { openModal, closeModal, modalButtons } from "./modal.js?v=1.5.1";
-import { ABILITIES, CHECKS, DAMAGE_TYPES, SKILLS, WEAPON_LIBRARY } from "./rules-data.js?v=1.3.0";
-import { classSummary } from "./character-features.js?v=1.3.0";
-import { availableSpells, selectedSpell, spellDamage } from "./spell-data.js?v=1.3.0";
-import { abilityModifier } from "./state.js?v=1.3.0";
-import { effectCatalog, effectContextsForRoll, effectMatchesRollScope, entryMatchesRoll, getApplicableEffects } from "./roll-engine.js?v=1.3.0";
+import { bardDie, bardLevel } from "./modifier-lifecycle.js?v=1.6.0";
+export { openModal, closeModal, modalButtons } from "./modal.js?v=1.6.0";
+import { ABILITIES, CHECKS, DAMAGE_TYPES, SKILLS, WEAPON_LIBRARY } from "./rules-data.js?v=1.6.0";
+import { classSummary } from "./character-features.js?v=1.6.0";
+import { availableSpells, selectedSpell, spellDamage } from "./spell-data.js?v=1.6.0";
+import { abilityModifier } from "./state.js?v=1.6.0";
+import { effectCatalog, effectContextsForRoll, effectMatchesRollScope, entryMatchesRoll, getApplicableEffects } from "./roll-engine.js?v=1.6.0";
 
 export const $ = selector => document.querySelector(selector);
 export const $$ = selector => [...document.querySelectorAll(selector)];
@@ -53,9 +54,10 @@ export function renderContextFields(state) {
 }
 
 const MODIFIER_CATEGORIES = {
-  conditions: { label: "Conditions", groups: ["Your conditions", "Target conditions", "Your defenses"] },
+  target: { label: "Target modifiers", groups: ["Target conditions", "Target defenses"] },
+  conditions: { label: "Conditions", groups: ["Your conditions", "Your defenses"] },
   support: { label: "Support & spells", groups: ["Spells & support", "Damage riders"] },
-  combat: { label: "Combat modifiers", groups: ["Situational", "Equipment & styles", "Target defenses", "Weapon mastery", "Magic items"] },
+  combat: { label: "Combat modifiers", groups: ["Situational", "Equipment & styles", "Weapon mastery", "Magic items"] },
   features: { label: "Features", groups: ["Character features", "Class features", "Species traits", "Feats", "Custom"] }
 };
 
@@ -77,9 +79,9 @@ export function renderRollSubrail(state) {
     const weaponOptions = c.weapons.map(weapon => `<button class="option-chip ${weapon.id === state.roll.selectedWeaponId ? "is-active" : ""}" type="button" data-select-weapon="${weapon.id}">${escapeHtml(weapon.name)}</button>`).join("");
     const attackMode = /thrown/i.test(selectedWeapon?.properties || "") ? `<span class="subcontext-divider"></span><span class="subcontext-label">Use</span><button class="option-chip ${state.roll.attackMode !== "ranged" ? "is-active" : ""}" type="button" data-attack-mode="melee">Melee</button><button class="option-chip ${state.roll.attackMode === "ranged" ? "is-active" : ""}" type="button" data-attack-mode="ranged">Thrown</button>` : "";
     const contextual = state.roll.context === "attack"
-      ? `<span class="subcontext-divider"></span><label class="subcontext-field">Target <input data-roll-field="targetName" value="${escapeHtml(state.roll.targetName)}" placeholder="Optional"></label><label class="subcontext-field">AC <input data-roll-field="targetAC" value="${escapeHtml(state.roll.targetAC)}" type="number" min="1" max="40" placeholder="—"></label>`
-      : `<span class="subcontext-divider"></span><label class="subcontext-field critical-chip"><input data-roll-field="critical" type="checkbox" ${state.roll.critical ? "checked" : ""}>Critical hit</label>`;
-    return `<span class="subcontext-label">Roll</span><button class="option-chip ${state.roll.context === "attack" ? "is-active" : ""}" type="button" data-context="attack">Attack</button><button class="option-chip ${state.roll.context === "damage" ? "is-active" : ""}" type="button" data-context="damage">Damage</button><span class="subcontext-divider"></span><span class="subcontext-label">Weapon</span>${weaponOptions || '<span class="applied-empty">No weapons</span>'}<button class="option-chip" type="button" data-action="add-weapon">＋</button>${attackMode}${contextual}`;
+      ? `<span class="subcontext-divider"></span>${targetButton(state)}`
+      : `<span class="subcontext-divider"></span><label class="subcontext-field critical-chip"><input data-roll-field="critical" type="checkbox" ${state.roll.critical ? "checked" : ""}>Critical hit</label>${targetButton(state)}`;
+    return `<span class="subcontext-label">Roll</span><button class="option-chip ${state.roll.context === "attack" ? "is-active" : ""}" type="button" data-context="attack">Attack</button><button class="option-chip ${state.roll.context === "damage" ? "is-active" : ""}" type="button" data-context="damage">Damage</button><span class="subcontext-divider"></span><span class="subcontext-label">Weapon</span>${weaponOptions || '<span class="applied-empty">No weapons</span>'}<button class="option-chip" type="button" data-action="add-weapon" aria-label="Add weapon" title="Add weapon">＋ Add</button>${attackMode}${contextual}`;
   }
   if (family === "spell") {
     const groups = availableSpells(state);
@@ -90,9 +92,9 @@ export function renderRollSubrail(state) {
       ${spell?.attack && spell.damages.length ? `<span class="subcontext-divider"></span><span class="subcontext-label">Roll</span><button class="option-chip ${phase === "attack" ? "is-active" : ""}" type="button" data-spell-phase="attack">Attack</button><button class="option-chip ${phase === "damage" ? "is-active" : ""}" type="button" data-spell-phase="damage">Damage</button>` : ""}
       ${phase === "damage" && spell?.level > 0 ? `<label class="subcontext-field"><span>Cast</span><select data-roll-field="spellSlotLevel" aria-label="Spell slot level">${slotOptions(spell.level, state.roll.spellSlotLevel, groups.maxLevel)}</select></label>` : ""}
       ${phase === "damage" && spell?.damages.length > 1 ? `<label class="subcontext-field"><span>Damage</span><select data-roll-field="spellDamageIndex" aria-label="Damage roll">${spell.damages.map((entry,index) => `<option value="${index}" ${index === Number(state.roll.spellDamageIndex) ? "selected" : ""}>${escapeHtml(entry.notation)} ${escapeHtml(entry.damageType)}</option>`).join("")}</select></label>` : ""}
-      ${phase === "attack" ? `<label class="subcontext-field">Target <input data-roll-field="targetName" value="${escapeHtml(state.roll.targetName)}" placeholder="Optional"></label><label class="subcontext-field">AC <input data-roll-field="targetAC" value="${escapeHtml(state.roll.targetAC)}" type="number" min="1" max="40" placeholder="—"></label>` : ""}
+      ${phase === "attack" ? `${targetButton(state)}` : ""}
       ${phase === "damage" && spell?.attack ? `<label class="subcontext-field critical-chip"><input data-roll-field="critical" type="checkbox" ${state.roll.critical ? "checked" : ""}>Critical</label>` : ""}
-      ${phase === "damage" ? `<span class="spell-damage-summary">${escapeHtml(damage.notation)} · ${escapeHtml(damage.damageType)}</span>` : ""}<button class="option-chip" type="button" data-action="add-spell">＋</button>`;
+      ${phase === "damage" ? targetButton(state) : ""}${phase === "damage" ? `<span class="spell-damage-summary">${escapeHtml(damage.notation)} · ${escapeHtml(damage.damageType)}</span>` : ""}<button class="option-chip" type="button" data-action="add-spell" aria-label="Add spell preset" title="Add spell preset">＋ Add</button>`;
   }
   if (family === "skill") return `<span class="subcontext-label">Check</span>${CHECKS.map(check => `<button class="option-chip ${check.key === state.roll.selectedSkill ? "is-active" : ""}" type="button" data-select-skill="${check.key}">${escapeHtml(check.label)} ${signed(checkModifier(state, check))}</button>`).join("")}`;
   if (family === "save") return `<span class="subcontext-label">Saving throw</span>${ABILITIES.map(ability => `<button class="option-chip ${ability.key === state.roll.selectedSave ? "is-active" : ""}" type="button" data-select-save="${ability.key}">${ability.short} ${signed(saveModifier(state, ability.key))}</button>`).join("")}<button class="option-chip ${state.roll.selectedSave === "death" ? "is-active" : ""}" type="button" data-select-save="death">Death +0</button>`;
@@ -108,6 +110,7 @@ export function renderDiceLoadout(state, plan) {
   if (plan.dice.length > 16) shownDice.push(`<div class="flat-token"><strong>+${plan.dice.length - 16}</strong><small>more dice</small></div>`);
   if (Number(plan.base.modifier)) shownDice.push(flatToken(signed(plan.base.modifier), "Base modifier"));
   plan.effects.forEach(effect => effect.entries.forEach(entry => {
+    if (entry.afterRoll) shownDice.push(flatToken(`${entry.notation} ready`, `${entry.label} · after roll`));
     if (entry.kind === "flat") shownDice.push(flatToken(signed(entry.value), entry.label));
     if (entry.kind === "proficiency") shownDice.push(flatToken(signed(state.character.proficiencyBonus), entry.label));
     if (entry.kind === "halfProficiency") shownDice.push(flatToken(signed(Math.floor(state.character.proficiencyBonus / 2)), entry.label));
@@ -141,14 +144,16 @@ export function renderModifierPopover(state, category, query = "") {
   let catalog = effectCatalog(state).filter(effect => effect.rulesets?.includes(state.ruleset) || effect.rulesets?.includes("all"));
   if (definition) catalog = catalog.filter(effect => definition.groups.includes(effect.group || "Custom"));
   if (needle) catalog = catalog.filter(effect => [effect.name, effect.group, effect.summary].some(value => String(value || "").toLowerCase().includes(needle)));
+  if (category === "target") catalog = catalog.filter(effect => effectMatchesRollScope(state, effect) && effect.entries.some(entry => entry.contexts.some(context => rollContexts.includes(context)) && entryMatchesRoll(state, entry)));
   if (!catalog.length) return '<div class="empty-inline">No matching modifiers.</div>';
   const active = new Set([...(state.activeEffects || []), ...(state.roll.selectedEffects || [])]);
   const grouped = groupBy(catalog);
-  return Object.entries(grouped).map(([group, effects]) => `<section><h3 class="modifier-group-title">${escapeHtml(group)}</h3>${effects.map(effect => {
+  const targetFields = category === "target" ? `<div class="field-grid"><label class="field"><span class="field-label">Target name</span><input data-roll-field="targetName" value="${escapeHtml(state.roll.targetName)}" placeholder="Optional"></label>${rollContexts.includes("attack") ? `<label class="field"><span class="field-label">Armor Class</span><input data-roll-field="targetAC" value="${escapeHtml(state.roll.targetAC)}" type="number" min="1" max="40" placeholder="Optional AC"></label>` : ""}</div><p class="field-note">Only choices for this roll are shown. Selections stay remembered across roll types.</p>` : "";
+  return targetFields + Object.entries(grouped).map(([group, effects]) => `<section><h3 class="modifier-group-title">${escapeHtml(group)}</h3>${effects.map(effect => {
     const entries = effect.entries?.filter(entry => entry.contexts.some(context => rollContexts.includes(context)) && entryMatchesRoll(state, entry)) || [];
     const contexts = [...new Set(effect.entries.flatMap(entry => entry.contexts))].map(title).join(", ");
     const applicable = entries.length > 0 && effectMatchesRollScope(state, effect);
-    return `<label class="modifier-option ${applicable ? "" : "is-disabled"}"><input type="checkbox" data-roll-effect="${effect.id}" ${active.has(effect.id) ? "checked" : ""} ${applicable ? "" : "disabled"}><span><strong>${escapeHtml(effect.name)}</strong><small>${escapeHtml(applicable ? effect.summary : `Applies to ${contexts}`)}</small></span><span class="modifier-value">${applicable ? escapeHtml(entryValue(entries, state, effect)) : "—"}</span></label>`;
+    return `<div class="modifier-choice"><label class="modifier-option ${applicable ? "" : "is-disabled"}"><input type="checkbox" data-roll-effect="${effect.id}" ${active.has(effect.id) ? "checked" : ""} ${applicable ? "" : "disabled"}><span><strong>${escapeHtml(effect.name)}</strong><small>${escapeHtml(applicable ? effect.summary : `Applies to ${contexts}`)}</small></span><span class="modifier-value">${applicable ? escapeHtml(entryValue(entries, state, effect)) : "—"}</span></label>${effect.configurable || effect.custom ? `<button class="text-btn configure-modifier" type="button" data-config-effect="${effect.id}" aria-label="Configure ${escapeHtml(effect.name)}">${effect.id === "bardic-inspiration" ? `Bard level ${bardLevel(state)} · Configure` : "Configure"}</button>` : ""}<small class="usage-note">${effect.usage === "single" ? "One use · asks to remove after use" : effect.usage === "turn" ? "Limited use · asks to remove after use" : "Remembered until removed"}</small></div>`;
   }).join("")}</section>`).join("");
 }
 
@@ -231,6 +236,7 @@ export function renderHistory(state) {
 }
 
 export function weaponForm(weapon = {}) {
+  weapon ||= {};
   return `<form class="form-stack" id="weaponForm">
     <label class="field"><span class="field-label">Start from a standard weapon</span><select id="weaponLibrary"><option value="">Custom weapon</option>${WEAPON_LIBRARY.map((w,i) => `<option value="${i}">${w.name} · ${w.damage}</option>`).join("")}</select></label>
     <label class="field"><span class="field-label">Name</span><input name="name" required value="${escapeHtml(weapon.name || "")}"></label>
@@ -248,6 +254,7 @@ export function weaponForm(weapon = {}) {
 }
 
 export function spellForm(spell = {}) {
+  spell ||= {};
   return `<form class="form-stack" id="spellForm">
     <label class="field"><span class="field-label">Name</span><input name="name" required value="${escapeHtml(spell.name || "")}"></label>
     <label class="field"><span class="field-label">What do you roll?</span><select name="rollType"><option value="attack" ${spell.rollType === "attack" ? "selected" : ""}>Spell attack</option><option value="damage" ${spell.rollType === "damage" ? "selected" : ""}>Damage / healing dice</option><option value="save" ${spell.rollType === "save" ? "selected" : ""}>Target saving throw, then damage</option></select></label>
@@ -261,9 +268,11 @@ export function spellForm(spell = {}) {
 }
 
 export function effectForm(effect = {}) {
+  effect ||= {};
   const entry = effect.entries?.[0] || {};
   return `<form class="form-stack" id="effectForm">
     <label class="field"><span class="field-label">Name</span><input name="name" required value="${escapeHtml(effect.name || "")}" placeholder="Potion bonus, favored enemy…"></label>
+    <label class="field"><span class="field-label">Usage</span><select name="usage"><option value="persistent" ${!effect.usage || effect.usage === "persistent" ? "selected" : ""}>Lasting effect</option><option value="single" ${effect.usage === "single" ? "selected" : ""}>One use — ask to remove after use</option><option value="turn" ${effect.usage === "turn" ? "selected" : ""}>Once per turn — ask to remove after use</option></select></label>
     <label class="field"><span class="field-label">Description</span><textarea name="summary" placeholder="When this modifier applies">${escapeHtml(effect.summary || "")}</textarea></label>
     <div class="field"><span class="field-label">Applies to</span><div class="check-grid">${["attack","damage","spell","skill","save","custom"].map(context => `<label class="check-chip"><input type="checkbox" name="contexts" value="${context}" ${entry.contexts?.includes(context) ? "checked" : ""}>${title(context)}</label>`).join("")}</div></div>
     <label class="field"><span class="field-label">Modifier type</span><select name="kind"><option value="die" ${entry.kind === "die" ? "selected" : ""}>Bonus or penalty dice</option><option value="flat" ${entry.kind === "flat" ? "selected" : ""}>Flat number</option><option value="proficiency" ${entry.kind === "proficiency" ? "selected" : ""}>Proficiency Bonus</option><option value="halfProficiency" ${entry.kind === "halfProficiency" ? "selected" : ""}>Half Proficiency Bonus</option><option value="advantage" ${entry.mode === "advantage" ? "selected" : ""}>Advantage</option><option value="disadvantage" ${entry.mode === "disadvantage" ? "selected" : ""}>Disadvantage</option><option value="targetAC" ${entry.kind === "targetAC" ? "selected" : ""}>Target AC change</option><option value="multiplier" ${entry.kind === "multiplier" ? "selected" : ""}>Damage multiplier</option><option value="ignoreResistance" ${entry.kind === "ignoreResistance" ? "selected" : ""}>Ignore damage resistance</option><option value="d20Floor" ${entry.kind === "d20Floor" ? "selected" : ""}>Minimum d20 result</option><option value="criticalRange" ${entry.kind === "criticalRange" ? "selected" : ""}>Critical threshold</option><option value="rerollValues" ${entry.kind === "rerollValues" ? "selected" : ""}>Reroll specific results</option><option value="rerollChoice" ${entry.kind === "rerollChoice" ? "selected" : ""}>Reroll one die after rolling</option><option value="dieFloor" ${entry.kind === "dieFloor" ? "selected" : ""}>Minimum die face</option><option value="rollTwice" ${entry.kind === "rollTwice" ? "selected" : ""}>Roll damage twice</option><option value="criticalOnHit" ${entry.kind === "criticalOnHit" ? "selected" : ""}>Automatic critical on hit</option><option value="criticalDamage" ${entry.kind === "criticalDamage" ? "selected" : ""}>Double damage dice</option><option value="missToHit" ${entry.kind === "missToHit" ? "selected" : ""}>Turn a miss into a hit</option><option value="saveDC" ${entry.kind === "saveDC" ? "selected" : ""}>Spell save DC change</option><option value="damageThreshold" ${entry.kind === "damageThreshold" ? "selected" : ""}>Damage threshold</option><option value="automaticFailure" ${entry.kind === "automaticFailure" ? "selected" : ""}>Automatic failure</option><option value="blocked" ${entry.kind === "blocked" ? "selected" : ""}>Roll blocked</option></select></label>
@@ -277,7 +286,7 @@ export function importModal() {
 }
 
 export function helpContent(state) {
-  return `<div class="help-section"><h3>Build a roll</h3><p>Choose a roll family on the bottom rail, then use the thin rail above it to select the weapon, spell, skill, save, or damage roll. Add situational modifiers from the grouped controls along the top, or search the full modifier list. The center platform always shows the dice and numeric modifiers that will be rolled.</p></div>
+  return `<button class="modal-button primary" type="button" data-action="start-tutorial">Replay introduction tutorial</button><div class="help-section"><h3>Build a roll</h3><p>Choose a roll family on the bottom rail, then use the thin rail above it to select the weapon, spell, skill, save, or damage roll. Add situational modifiers from the grouped controls along the top, or search the full modifier list. The center platform always shows the dice and numeric modifiers that will be rolled.</p></div>
     <div class="help-section"><h3>Advantage and disadvantage</h3><p>Use the mode control at the right of the applied-modifier rail for a manual choice. Active conditions can also set the mode automatically. Advantage and disadvantage cancel one another regardless of how many sources apply.</p></div>
     <div class="help-section"><h3>What the app calculates</h3><ul><li>Attack and spell attack modifiers</li><li>Damage dice, critical dice, damage riders, resistance, and vulnerability</li><li>Skill and saving throw proficiency or expertise</li><li>Cover as adjusted target AC</li><li>2014 and 2024 rule-specific presets</li></ul></div>
     <div class="help-section"><h3>Import privacy</h3><p>Character files are read in your browser. Character data and roll history stay in this browser’s local storage.</p></div>
@@ -295,7 +304,7 @@ export function toast(message) {
 
 export function entryValue(entries, state, effect) {
   return entries.map(entry => {
-    if (entry.kind === "die") return state.effectConfig?.[effect.id]?.notation || entry.notation;
+    if (entry.kind === "die") { const notation = effect.id === "bardic-inspiration" ? bardDie(bardLevel(state)) : state.effectConfig?.[effect.id]?.notation || entry.notation; return `${notation}${entry.afterRoll ? " after roll" : ""}`; }
     if (entry.kind === "mode") return title(entry.mode);
     if (entry.kind === "proficiency") return `+${state.character.proficiencyBonus}`;
     if (entry.kind === "halfProficiency") return `+${Math.floor(state.character.proficiencyBonus / 2)}`;
@@ -353,3 +362,17 @@ function slotOptions(minimum, selected, maximum = null) {
 function title(value) { return String(value).replace(/(^|-)\w/g, text => text.replace("-", " ").toUpperCase()); }
 function formatTime(value) { return new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit" }).format(new Date(value)); }
 function groupBy(items) { return items.reduce((groups,item) => { (groups[item.group || "Custom"] ||= []).push(item); return groups; }, {}); }
+
+function targetButton(state) {
+  const effects = getApplicableEffects(state, effectContextsForRoll(state)).filter(effect => effect.group.startsWith("Target"));
+  return `<button class="option-chip target-trigger" type="button" data-modifier-category="target" aria-haspopup="dialog" aria-controls="modifierPopover">Target${state.roll.targetName ? `: ${escapeHtml(state.roll.targetName)}` : ""}${effects.length ? ` · ${effects.length}` : ""} ▴</button>`;
+}
+
+export function validateForm(form) {
+  const invalid = [...form.elements].find(field => field.willValidate && !field.validity.valid);
+  if (!invalid) return true;
+  toast(invalid.validationMessage || "Complete the required fields.");
+  invalid.setAttribute("aria-invalid", "true");
+  invalid.focus();
+  return false;
+}

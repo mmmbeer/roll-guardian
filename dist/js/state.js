@@ -1,4 +1,4 @@
-import { ABILITIES, SKILLS } from "./rules-data.js?v=1.3.0";
+import { ABILITIES, SKILLS } from "./rules-data.js?v=1.6.0";
 
 const STORAGE_KEY = "whatDoIRoll.v1";
 

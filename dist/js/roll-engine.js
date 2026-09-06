@@ -1,7 +1,8 @@
-import { CHECKS, EFFECT_PRESETS } from "./rules-data.js?v=1.3.0";
-import { characterFeatureEffects } from "./character-features.js?v=1.3.0";
-import { selectedSpell, spellDamage } from "./spell-data.js?v=1.3.0";
-import { abilityModifier } from "./state.js?v=1.3.0";
+import { bardDie, bardLevel, isAfterRoll, modifierUsage } from "./modifier-lifecycle.js?v=1.6.0";
+import { CHECKS, EFFECT_PRESETS } from "./rules-data.js?v=1.6.0";
+import { characterFeatureEffects } from "./character-features.js?v=1.6.0";
+import { selectedSpell, spellDamage } from "./spell-data.js?v=1.6.0";
+import { abilityModifier } from "./state.js?v=1.6.0";
 
 const DIE_RE = /([+-]?)(\d*)d(\d+)|([+-]?\d+)/gi;
 
@@ -46,7 +47,7 @@ export function buildRollPlan(state) {
   const automaticMode = hasAdvantage === hasDisadvantage ? "normal" : hasAdvantage ? "advantage" : "disadvantage";
   const mode = state.roll.modeOverride || automaticMode;
   const flatEffects = entries.filter(entry => ["flat", "proficiency", "halfProficiency"].includes(entry.kind));
-  const dieEffects = entries.filter(entry => entry.kind === "die");
+  const dieEffects = entries.filter(entry => entry.kind === "die" && !entry.afterRoll);
   const targetACBonus = sum(entries.filter(entry => entry.kind === "targetAC").map(entry => entry.value));
   const baseParsed = parseNotation(base.notation);
   const baseDamageType = base.damageType || "Untyped";
@@ -81,7 +82,7 @@ export function buildRollPlan(state) {
     ...entry, damageType: resolveDamageType(entry.damageType, baseDamageType)
   }));
   const plan = {
-    context, effectContexts, label: base.label, sublabel: base.sublabel, base, effects, entries, mode, automaticMode,
+    context, effectContexts, ruleset: state.ruleset, modeOverridden: Boolean(state.roll.modeOverride), label: base.label, sublabel: base.sublabel, base, effects, entries, mode, automaticMode,
     dice, flat, flatComponents, dieEffects, flatEffects, multipliers, targetAC, effectiveAC,
     criticalThreshold: Math.max(2, Math.min(20, ...entries.filter(entry => entry.kind === "criticalRange").map(entry => Number(entry.value)).filter(Number.isFinite))),
     d20Floor: Math.min(20, Math.max(0, ...entries.filter(entry => entry.kind === "d20Floor").map(entry => Number(entry.value)).filter(Number.isFinite))),
@@ -92,6 +93,7 @@ export function buildRollPlan(state) {
     missToHit: entries.some(entry => entry.kind === "missToHit"),
     ignoreResistance: entries.filter(entry => entry.kind === "ignoreResistance").flatMap(entry => entry.damageTypes || []),
     damageThreshold: Math.max(0, ...entries.filter(entry => entry.kind === "damageThreshold").map(entry => Number(entry.value)).filter(Number.isFinite)),
+    postRollChoices: entries.filter(entry => entry.afterRoll),
     rerollChoices: entries.filter(entry => entry.kind === "rerollChoice")
   };
   plan.notation = formatPlanNotation(dice, flat, mode);
@@ -107,15 +109,18 @@ export function executeRoll(plan, suppliedResults = null, options = {}) {
   return calculateOutcome(plan, results, options);
 }
 
-export function rerollOutcome(plan, outcome, resultIndex) {
+export function rerollOutcome(plan, outcome, resultIndex, effectId = plan.rerollChoices[0]?.effectId) {
+  const choice = plan.rerollChoices.find(entry => entry.effectId === effectId);
+  if (!choice || outcome.rerollEffectsUsed?.includes(effectId)) return outcome;
   const target = outcome.results[resultIndex];
+  if (!target || target.rerolledByChoice || !scopeMatches(choice.scope, target)) return outcome;
   const value = rollDie(target.sides);
   const floor = dieFloor(plan, target);
   const results = outcome.results.map((result, index) => index === resultIndex
     ? { ...result, originalValue: result.value, value, calculatedValue: floor ? Math.max(value, floor) : value, rerolledByChoice: true }
     : { ...result });
-  const bonus = sum(plan.rerollChoices.map(entry => Number(entry.rerollBonus || 0)));
-  return calculateOutcome(plan, results, { rerollsUsed: Number(outcome.rerollsUsed || 0) + 1, rerollBonus: bonus });
+  const bonus = Number(outcome.rerollBonus || 0) + Number(choice.rerollBonus || 0);
+  return calculateOutcome(plan, results, { ...outcome, rerollsUsed: Number(outcome.rerollsUsed || 0) + 1, rerollBonus: bonus, rerollEffectsUsed: [...(outcome.rerollEffectsUsed || []), effectId] });
 }
 
 function calculateOutcome(plan, results, options = {}) {
@@ -156,6 +161,7 @@ function calculateOutcome(plan, results, options = {}) {
     results, usedResults, raw, total, multiplier: damage?.multiplier ?? 1, damageBreakdown: damage?.breakdown || [],
     d20Value, d20Applied, discarded, alternateDiscarded: alternate.discarded, naturalCritical, naturalOne,
     criticalHit, hit, blocked: plan.blocked, automaticFailure: plan.automaticFailure,
+    postRollUsed: options.postRollUsed || [], rerollEffectsUsed: options.rerollEffectsUsed || [],
     rerollsUsed: Number(options.rerollsUsed || 0), rerollBonus
   };
 }
@@ -207,7 +213,13 @@ function calculateTypedDamage(plan, results) {
 
 export function effectCatalog(state) {
   const all = [...EFFECT_PRESETS, ...(state.customEffects || []), ...characterFeatureEffects(state.character, state.ruleset)];
-  return [...new Map(all.map(effect => [effect.id, effect])).values()];
+  return [...new Map(all.map(effect => [effect.id, effect])).values()].map(effect => ({
+    ...effect, usage: modifierUsage(effect, state.ruleset),
+    configurable: effect.id === "bardic-inspiration" ? "bardLevel" : effect.id === "guidance" && state.ruleset === "2024" ? "skill" : effect.configurable,
+    entries: effect.entries.map(entry => ({ ...entry, afterRoll: isAfterRoll(effect),
+      ...(effect.id === "bardic-inspiration" ? { notation: bardDie(bardLevel(state)) } : {}),
+      ...(effect.id === "guidance" && state.ruleset === "2024" ? { checks: [state.effectConfig?.guidance?.skill || "perception"] } : {}) }))
+  }));
 }
 
 export function getApplicableEffects(state, contexts, suppliedBase = null) {
@@ -318,7 +330,8 @@ export function effectContextsForRoll(state, base = baseForContext(state)) {
 function configuredEntry(state, effect, entry) {
   const config = state.effectConfig?.[effect.id] || {};
   const configured = config.notation?.replace?.(/−/g, "-");
-  if (entry.kind === "die" && configured) return { ...entry, notation: configured };
+  if (effect.id === "bardic-inspiration") return entry;
+  if (entry.kind === "die") return { ...entry, ...(configured ? { notation: configured } : {}), ...(config.damageType ? { damageType: config.damageType } : {}) };
   if (["flat", "saveDC", "damageThreshold", "criticalRange"].includes(entry.kind) && configured) {
     const value = Number(String(configured).replace(/[^0-9+-.]/g, ""));
     if (Number.isFinite(value)) return { ...entry, value };
@@ -397,3 +410,15 @@ function appliedValue(result) { return Number(result.calculatedValue ?? result.v
 function addDamage(groups, type, value) { groups.set(type, (groups.get(type) || 0) + Number(value || 0)); }
 function signed(value) { const number = Number(value || 0); return number >= 0 ? `+${number}` : `-${Math.abs(number)}`; }
 function sum(values) { return values.reduce((total, value) => total + (Number.isFinite(Number(value)) ? Number(value) : 0), 0); }
+
+export function addPostRollModifier(plan, outcome, effectId, values = null) {
+  const entry = plan.postRollChoices.find(item => item.effectId === effectId);
+  if (!entry || outcome.postRollUsed.includes(effectId)) return { plan, outcome, added: [] };
+  const added = parseNotation(entry.notation).dice.map((die, index) => ({
+    ...die, label: entry.label, source: effectId, value: values?.[index] ?? rollDie(die.sides)
+  }));
+  const nextPlan = { ...plan, dice: [...plan.dice, ...added], notation: `${plan.notation} + ${entry.notation} (${entry.label})` };
+  return { plan: nextPlan, added, outcome: calculateOutcome(nextPlan, [...outcome.results, ...added], {
+    ...outcome, postRollUsed: [...outcome.postRollUsed, effectId]
+  }) };
+}

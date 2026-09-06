@@ -312,3 +312,29 @@ body.modal-open { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* Contextual target drawer and onboarding. */
+.modifier-popover.target-drawer { top: auto; bottom: calc(112px + var(--safe-bottom)); max-height: calc(100dvh - 145px - var(--safe-bottom)); border-radius: 14px 14px 6px 6px; animation: target-slide-up .18s ease-out; }
+@keyframes target-slide-up { from { opacity: 0; transform: translate(-50%, 24px); } to { opacity: 1; transform: translate(-50%, 0); } }
+.modifier-choice { padding-bottom: 10px; border-bottom: 1px solid var(--line-soft); }
+.modifier-choice .modifier-option { border-bottom: 0; }
+.configure-modifier { margin: 0 12px 6px 38px; min-height: 32px; }
+.usage-note { display: block; padding: 0 12px 0 38px; color: var(--muted); font-size: .68rem; }
+.target-trigger { border-color: #617181; }
+.post-roll-total { margin-bottom: 14px; color: var(--accent); font-size: 1.2rem; }
+.check-chip small { display: block; margin-top: 5px; color: var(--muted); }
+.tutorial-backdrop { background: transparent; backdrop-filter: none; padding: 16px; }
+.tutorial-backdrop[data-placement="top"] { align-items: flex-start; padding-top: min(130px, 24dvh); }
+.tutorial-backdrop[data-placement="bottom"] { align-items: flex-end; padding-bottom: min(135px, 24dvh); }
+.tutorial-backdrop .modal { width: min(470px, 100%); max-height: calc(100dvh - 160px); border-color: var(--accent); border-radius: 12px; }
+.tutorial-backdrop .modal-body { line-height: 1.6; padding: 16px 20px; }
+.tutorial-progress { color: var(--accent); font-size: .72rem; margin-bottom: 8px; }
+.tutorial-highlight { outline: 2px solid var(--accent); outline-offset: 3px; }
+.tutorial-demo { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.tutorial-demo-tabs, .tutorial-demo-dice { display: flex; flex-wrap: wrap; gap: 8px; }
+.tutorial-demo-dice { margin-top: 12px; align-items: center; }
+.tutorial-demo .die-token { width: 68px; height: 68px; }
+.tutorial-demo .die-token strong { font-size: 1.2rem; }
+.tutorial-demo .applied-chip:disabled { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .modifier-popover.target-drawer { animation: none; } }
+@media (max-height: 500px) { .tutorial-backdrop .modal { max-height: calc(100dvh - 64px); } .tutorial-backdrop[data-placement] { padding: 32px 12px; } }

@@ -1,26 +1,30 @@
-import { createDiceTray, playDiceSound } from "./dice-3d.js?v=1.5.0";
-import { createDiceAppearanceController } from "./dice-materials.js?v=1.5.1";
-import { importCharacterFile } from "./importer.js?v=1.3.0";
-import { buildRollPlan, effectCatalog, executeRoll, rerollOutcome } from "./roll-engine.js?v=1.3.0";
-import { DAMAGE_TYPES } from "./rules-data.js?v=1.3.0";
-import { createDefaultState, loadState, proficiencyForLevel, saveState, uid } from "./state.js?v=1.3.0";
-import { selectedSpell } from "./spell-data.js?v=1.3.0";
+import { createRollController } from "./roll-controller.js?v=1.6.0";
+import { createTutorial } from "./tutorial.js?v=1.6.0";
+import { bardLevel, bardDie } from "./modifier-lifecycle.js?v=1.6.0";
+import { createDiceTray } from "./dice-3d.js?v=1.6.0";
+import { createDiceAppearanceController } from "./dice-materials.js?v=1.6.0";
+import { importCharacterFile } from "./importer.js?v=1.6.0";
+import { buildRollPlan, effectCatalog } from "./roll-engine.js?v=1.6.0";
+import { DAMAGE_TYPES, SKILLS } from "./rules-data.js?v=1.6.0";
+import { createDefaultState, loadState, proficiencyForLevel, saveState, uid } from "./state.js?v=1.6.0";
+import { selectedSpell } from "./spell-data.js?v=1.6.0";
 import {
   $, $$, closeModal, effectForm, escapeHtml, helpContent, importModal, modalButtons,
   modifierCategoryLabel, openModal, renderAppliedModifiers, renderCharacter,
   renderDiceLoadout, renderEffects, renderHistory, renderModifierPopover,
-  renderRollSubrail, rollFamily, signed, spellForm, toast, weaponForm
-} from "./ui.js?v=1.5.1";
+  renderRollSubrail, rollFamily, spellForm, toast, weaponForm, validateForm
+} from "./ui.js?v=1.6.0";
 let state = loadState();
 let modalAction = null;
 let pendingImport = null;
 let modifierPicker = null;
-let lastRoll = null;
-let lastRollHistoryId = null;
 const tray = createDiceTray($("#diceCanvas"));
 createDiceAppearanceController({ getState: () => state, tray, save: () => saveState(state), openModal, toast });
+const rolls = createRollController({ getState: () => state, tray, renderAll, closeModifierPicker });
+const tutorial = createTutorial({ getState: () => state, renderAll, closeModifierPicker });
 renderAll();
 bindEvents();
+tutorial.startIfNew();
 function renderAll() {
   $("#rulesetSelect").value = state.ruleset;
   renderNavigation();
@@ -42,6 +46,7 @@ function renderNavigation() {
 function renderRoll() {
   $("#appliedModifiers").innerHTML = renderAppliedModifiers(state);
   $("#subcontextRail").innerHTML = renderRollSubrail(state);
+  refreshModifierPicker();
   const family = rollFamily(state.roll.context);
   $$("#contextTabs [data-roll-family]").forEach(button => button.classList.toggle("is-active", button.dataset.rollFamily === family));
   updateRollSummary();
@@ -67,7 +72,7 @@ function bindEvents() {
   document.addEventListener("keydown", event => {
     if (event.code === "Space" && !isFormControl(event.target) && $("#modalBackdrop").hidden && state.view === "roll") {
       event.preventDefault();
-      runRoll();
+      rolls.run();
     }
     if (event.key === "Escape" && !$("#modalBackdrop").hidden) closeModal();
     else if (event.key === "Escape" && modifierPicker) closeModifierPicker();
@@ -84,6 +89,7 @@ function bindEvents() {
 }
 
 function handleClick(event) {
+  if (event.target.closest('[data-action="start-tutorial"]')) { closeModal(); tutorial.start(); return; }
   if (modifierPicker && !event.target.closest("#modifierPopover") && !event.target.closest("[data-modifier-category]") && !event.target.closest("#modifierSearch")) closeModifierPicker();
   const view = event.target.closest("[data-view-link]");
   if (view) { state.view = view.dataset.viewLink; closeModifierPicker(); renderAll(); return; }
@@ -112,10 +118,10 @@ function handleClick(event) {
   const mode = event.target.closest("[data-mode]");
   if (mode) { state.roll.modeOverride = mode.dataset.mode; closeModifierPicker(); resetPlatform(); renderRoll(); saveState(state); return; }
   if (event.target.closest("[data-close-modal]")) { closeModal(event.target.closest("[data-modal-confirm]") ? "confirm" : "cancel"); return; }
-  if (event.target.closest("#rollButton")) { runRoll(); return; }
-  if (event.target.closest('[data-action="reroll-result"]')) { openRerollDialog(); return; }
+  if (event.target.closest("#rollButton")) { rolls.run(); return; }
+  if (event.target.closest('[data-action="reroll-result"]')) { rolls.openRerollDialog(); return; }
   const rerollDieButton = event.target.closest("[data-reroll-index]");
-  if (rerollDieButton) { performReroll(Number(rerollDieButton.dataset.rerollIndex)); return; }
+  if (rerollDieButton) { rolls.performReroll(Number(rerollDieButton.dataset.rerollIndex), rerollDieButton.dataset.rerollEffect); return; }
   if (event.target.closest("#resetRoll")) { resetRoll(); return; }
   if (event.target.closest("#helpButton")) { openModal("How to use this", helpContent(state), '<button class="modal-button primary" type="button" data-close-modal>Done</button>'); return; }
   if (event.target.closest("#openImport")) { openImportDialog(); return; }
@@ -199,79 +205,6 @@ function handleInput(event) {
   }
 }
 
-function runRoll() {
-  if (tray.running) return;
-  const plan = buildRollPlan(state);
-  if (plan.blocked || plan.automaticFailure) { toast(plan.blocked ? "The target has total cover; no roll can be made." : "This saving throw fails automatically."); return; }
-  if (!plan.dice.length) { toast("Enter valid dice notation first."); return; }
-  const outcome = executeRoll(plan);
-  $("#dicePreview").hidden = true;
-  $("#rollResult").hidden = true;
-  $("#rollButton").disabled = true;
-  playDiceSound(state.sound);
-  navigator.vibrate?.(20);
-  tray.roll(outcome.results, { usedResults: outcome.usedResults, onDone: () => finishRoll(plan, outcome) });
-}
-
-function finishRoll(plan, outcome) {
-  const detail = resultDetail(plan, outcome);
-  const canReroll = plan.rerollChoices.length && outcome.rerollsUsed < Math.max(...plan.rerollChoices.map(entry => Number(entry.value || 1)));
-  const total = outcome.blocked || outcome.automaticFailure ? "—" : outcome.total;
-  $("#rollResult").innerHTML = `<strong>${total}</strong><span>${escapeHtml(detail)}</span>${canReroll ? '<button class="reroll-result" type="button" data-action="reroll-result">Reroll one die</button>' : ""}`;
-  $("#rollResult").hidden = false;
-  $("#rollButton").disabled = false;
-  lastRoll = { plan, outcome };
-  if (outcome.rerollsUsed && state.history[0]?.id === lastRollHistoryId) {
-    Object.assign(state.history[0], { total: outcome.total, detail, notation: `${plan.notation} · rerolled` });
-  } else {
-    const entry = { id: uid(), at: new Date().toISOString(), context: plan.context, label: plan.label, notation: plan.notation, total: outcome.total, detail };
-    lastRollHistoryId = entry.id;
-    state.history.unshift(entry);
-  }
-  state.history = state.history.slice(0, 60);
-  $("#historyList").innerHTML = renderHistory(state);
-  saveState(state);
-}
-
-function resultDetail(plan, outcome) {
-  if (outcome.blocked) return "No roll: the target has total cover";
-  if (outcome.automaticFailure) return "Automatic failure";
-  const dice = outcome.usedResults.map(die => {
-    const applied = die.d20 ? outcome.d20Applied : die.calculatedValue;
-    return `${die.sign < 0 ? "−" : ""}${die.value}${applied > die.value ? `→${applied}` : ""}`;
-  }).join(" + ");
-  const shownFlat = plan.flat + Number(outcome.rerollBonus || 0);
-  const parts = [dice, shownFlat ? signed(shownFlat) : ""].filter(Boolean).join(" ");
-  if (plan.base.attackRoll && plan.effectiveAC) return `${outcome.criticalHit ? "Critical hit" : outcome.hit ? "Hit" : "Miss"} vs. AC ${plan.effectiveAC} · ${parts}${outcome.discarded ? ` · discarded ${outcome.discarded}` : ""}`;
-  if (outcome.naturalCritical) return `${outcome.d20Value === 20 ? "Natural 20" : `Critical on ${outcome.d20Value}`} · ${parts}`;
-  if (outcome.criticalHit) return `Critical on hit · ${parts}`;
-  if (outcome.naturalOne) return `Natural 1 · ${parts}`;
-  if (outcome.damageBreakdown.length > 1) return outcome.damageBreakdown.map(item => `${item.total} ${item.damageType}${item.multiplier !== 1 ? ` (×${item.multiplier})` : ""}`).join(" + ");
-  if (outcome.multiplier !== 1) return `${parts} · ${outcome.raw} × ${outcome.multiplier}`;
-  if (outcome.alternateDiscarded != null) return `${parts} · discarded damage roll ${outcome.alternateDiscarded}`;
-  return parts;
-}
-
-function openRerollDialog() {
-  if (!lastRoll) return;
-  const { plan, outcome } = lastRoll;
-  const choices = outcome.results.map((result, index) => ({ result, index }))
-    .filter(({ result }) => !result.originalValue && !result.rerolledByChoice && plan.rerollChoices.some(entry => !entry.scope || entry.scope === "d20" && result.d20 || entry.scope === "baseDamage" && result.source === "base"));
-  const body = choices.map(({ result, index }) => `<button class="reroll-choice" type="button" data-reroll-index="${index}"><span>${escapeHtml(result.label || (result.d20 ? "d20" : `d${result.sides}`))}</span><strong>${result.value}</strong></button>`).join("");
-  openModal("Choose a die to reroll", `<div class="reroll-grid">${body}</div><p class="field-note">The new result must be used.</p>`, '<button class="modal-button" type="button" data-close-modal>Cancel</button>');
-}
-
-function performReroll(resultIndex) {
-  if (!lastRoll || tray.running) return;
-  const { plan, outcome } = lastRoll;
-  const next = rerollOutcome(plan, outcome, resultIndex);
-  closeModal();
-  $("#rollResult").hidden = true;
-  $("#rollButton").disabled = true;
-  playDiceSound(state.sound);
-  tray.roll(next.results, { usedResults: next.usedResults, onDone: () => finishRoll(plan, next) });
-}
-
 function resetRoll() {
   const defaults = createDefaultState().roll;
   state.roll = { ...defaults, context: state.roll.context, selectedWeaponId: state.character.weapons[0]?.id || null, selectedSpellId: state.character.spells[0]?.id || null };
@@ -300,9 +233,11 @@ function setEffectEnabled(id, enabled) {
   state.roll.modeOverride = null;
   resetPlatform();
   renderAll();
+  if (modifierPicker) $$("#modifierPopoverBody [data-roll-effect]").find(input => input.dataset.rollEffect === id)?.focus({ preventScroll: true });
 }
 
 function resetPlatform() {
+  rolls.reset();
   $("#rollResult").hidden = true;
   $("#dicePreview").hidden = false;
 }
@@ -314,28 +249,32 @@ function openModifierPicker(category, query = "") {
   }
   modifierPicker = { category, query };
   refreshModifierPicker();
+  if (category !== "search") $("#closeModifierPopover").focus({ preventScroll: true });
 }
 
 function refreshModifierPicker() {
   const popover = $("#modifierPopover");
   if (!modifierPicker) { popover.hidden = true; return; }
+  popover.classList.toggle("target-drawer", modifierPicker.category === "target");
   popover.hidden = false;
   $("#popoverEyebrow").textContent = `${title(state.roll.context)} roll`;
   $("#popoverTitle").textContent = modifierCategoryLabel(modifierPicker.category, modifierPicker.query);
   $("#modifierPopoverBody").innerHTML = renderModifierPopover(state, modifierPicker.category, modifierPicker.query);
-  $$("[data-modifier-category]").forEach(button => button.classList.toggle("is-open", button.dataset.modifierCategory === modifierPicker.category));
+  $$("[data-modifier-category]").forEach(button => { button.classList.toggle("is-open", button.dataset.modifierCategory === modifierPicker.category); button.setAttribute("aria-expanded", String(button.dataset.modifierCategory === modifierPicker.category)); });
 }
 
 function closeModifierPicker() {
+  const category = modifierPicker?.category;
+  if (category && document.activeElement?.closest("#modifierPopover")) $( `[data-modifier-category="${category}"]`)?.focus({ preventScroll: true });
   modifierPicker = null;
   $("#modifierPopover").hidden = true;
-  $$("[data-modifier-category]").forEach(button => button.classList.remove("is-open"));
+  $$("[data-modifier-category]").forEach(button => { button.classList.remove("is-open"); button.setAttribute("aria-expanded", "false"); });
 }
 
 function openWeaponEditor(weapon = null) {
   openModal(weapon ? "Edit weapon" : "Add weapon", weaponForm(weapon), modalButtons(weapon ? "Save changes" : "Add weapon"));
   modalAction = () => {
-    const form = $("#weaponForm"); if (!form.reportValidity()) return;
+    const form = $("#weaponForm"); if (!validateForm(form)) return;
     const data = Object.fromEntries(new FormData(form));
     const value = { id: weapon?.id || uid(), name: data.name.trim(), ability: data.ability, proficient: form.elements.proficient.checked, attackBonus: nullableNumber(data.attackBonus), damage: data.damage.trim(), damageAbility: form.elements.damageAbility.checked, damageBonus: Number(data.damageBonus || 0), damageType: data.damageType, properties: data.properties.trim() };
     if (weapon) Object.assign(weapon, value); else state.character.weapons.push(value);
@@ -346,7 +285,7 @@ function openWeaponEditor(weapon = null) {
 function openSpellEditor(spell = null) {
   openModal(spell ? "Edit spell preset" : "Add spell preset", spellForm(spell), modalButtons(spell ? "Save changes" : "Add spell"));
   modalAction = () => {
-    const form = $("#spellForm"); if (!form.reportValidity()) return;
+    const form = $("#spellForm"); if (!validateForm(form)) return;
     const data = Object.fromEntries(new FormData(form));
     const value = { id: spell?.id || uid(), name: data.name.trim(), rollType: data.rollType, damage: data.damage.trim(), damageType: data.damageType, attackBonus: nullableNumber(data.attackBonus), saveDC: nullableNumber(data.saveDC), damageBonus: 0, source: "custom", imported: false };
     if (spell) Object.assign(spell, value); else state.character.spells.push(value);
@@ -357,7 +296,7 @@ function openSpellEditor(spell = null) {
 function openItemEditor() {
   openModal("Add equipment", '<form class="form-stack" id="itemForm"><label class="field"><span class="field-label">Item name</span><input name="name" required placeholder="Potion of healing, thieves’ tools…"></label><p class="field-note">If this item changes a roll, add its bonus under Effects so it can be switched on when relevant.</p></form>', modalButtons("Add item"));
   modalAction = () => {
-    const form = $("#itemForm"); if (!form.reportValidity()) return;
+    const form = $("#itemForm"); if (!validateForm(form)) return;
     state.character.items ||= []; state.character.items.push(new FormData(form).get("name").trim());
     closeModal(); renderAll();
   };
@@ -370,7 +309,7 @@ function openEffectEditor(effect = null) {
       state.customEffects = state.customEffects.filter(item => item.id !== effect.id);
       toggleArray(state.activeEffects, effect.id, false); closeModal(); renderAll(); return;
     }
-    const form = $("#effectForm"); if (!form.reportValidity()) return;
+    const form = $("#effectForm"); if (!validateForm(form)) return;
     const data = new FormData(form); const contexts = data.getAll("contexts");
     if (!contexts.length) { toast("Choose at least one roll context."); return; }
     const kindChoice = data.get("kind");
@@ -383,14 +322,25 @@ function openEffectEditor(effect = null) {
     else if (kindChoice === "ignoreResistance") Object.assign(entry, { kind: kindChoice, damageTypes: [damageType] });
     else Object.assign(entry, { kind: kindChoice, value: Number(data.get("value") || 0), damageType });
     if (["rerollValues", "dieFloor", "rollTwice"].includes(kindChoice)) entry.scope = contexts.includes("damage") ? "baseDamage" : "d20";
-    const value = { id: effect?.id || uid(), name: data.get("name").trim(), group: "Custom", summary: data.get("summary").trim() || "Custom modifier", rulesets: ["all"], entries: [entry], custom: true };
+    const value = { id: effect?.id || uid(), name: data.get("name").trim(), group: "Custom", summary: data.get("summary").trim() || "Custom modifier", rulesets: ["all"], entries: [entry], usage: data.get("usage"), custom: true };
     if (effect) Object.assign(effect, value); else state.customEffects.push(value);
     toggleArray(state.roll.selectedEffects, value.id, true); closeModal(); renderAll(); toast(effect ? "Modifier updated" : "Modifier added to this roll");
   };
 }
 
 function openEffectConfiguration(id) {
+  closeModifierPicker();
   const effect = effectCatalog(state).find(item => item.id === id);
+  if (id === "bardic-inspiration") {
+    openModal("Bardic Inspiration", `<form id="bardLevelForm" class="form-stack"><label class="field"><span class="field-label">Level of the bard who gave you Inspiration</span><select name="bardLevel">${Array.from({ length: 20 }, (_, index) => index + 1).map(level => `<option value="${level}" ${level === bardLevel(state) ? "selected" : ""}>Level ${level} · ${bardDie(level)}</option>`).join("")}</select></label><p class="field-note">Use the source bard’s class level, which may differ from your character’s level. The die is offered after an eligible roll.</p></form>`, modalButtons("Save"));
+    modalAction = () => { state.effectConfig[id] = { bardLevel: Number(new FormData($("#bardLevelForm")).get("bardLevel")) }; closeModal(); renderAll(); };
+    return;
+  }
+  if (effect?.configurable === "skill") {
+    openModal("Guidance skill", `<form id="guidanceForm" class="form-stack"><label class="field"><span class="field-label">Skill chosen when Guidance was cast</span><select name="skill">${SKILLS.map(skill => `<option value="${skill.key}" ${skill.key === (state.effectConfig.guidance?.skill || "perception") ? "selected" : ""}>${skill.label}</option>`).join("")}</select></label><p class="field-note">2024 Guidance stays remembered for this skill until you remove it.</p></form>`, modalButtons("Save"));
+    modalAction = () => { state.effectConfig.guidance = { skill: new FormData($("#guidanceForm")).get("skill") }; closeModal(); renderAll(); };
+    return;
+  }
   if (effect?.custom) { openEffectEditor(effect); return; }
   if (effect?.configurable === "damageType") {
     const currentType = state.effectConfig?.[id]?.damageType || buildRollPlan(state).base.damageType || DAMAGE_TYPES[0];
@@ -438,7 +388,7 @@ async function parseCharacterImport(file) {
 }
 
 function fillWeaponForm(index) {
-  import("./rules-data.js?v=1.3.0").then(({ WEAPON_LIBRARY }) => {
+  import("./rules-data.js?v=1.6.0").then(({ WEAPON_LIBRARY }) => {
     const weapon = WEAPON_LIBRARY[index]; const form = $("#weaponForm"); if (!weapon || !form) return;
     ["name","ability","damage","damageType","properties"].forEach(key => { form.elements[key].value = weapon[key]; });
   });

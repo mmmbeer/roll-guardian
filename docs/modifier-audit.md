@@ -29,3 +29,7 @@ Material outside the SRDs can introduce differently named features and items, so
 - Scoped modifiers are disabled when the selected ability, check, attack type, proficiency state, or roll phase does not qualify.
 - Great Weapon Fighting, Savage Attacker, Reliable Talent, Glibness, Halfling Lucky, Heroic Inspiration, automatic criticals, and expanded critical ranges use their own dice mechanics instead of approximated flat values.
 - Straight ability checks, Initiative, and death saving throws are directly selectable.
+
+## Usage and post-roll audit (1.6.0)
+
+See [the complete usage audit](modifier-usage-audit.md) for every preset and imported feature, one-use cleanup, post-roll choices, and the 2014/2024 Guidance and Resistance corrections.

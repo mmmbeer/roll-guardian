@@ -1,4 +1,4 @@
-import { abilityModifier } from "./state.js?v=1.3.0";
+import { abilityModifier } from "./state.js?v=1.6.0";
 
 export function characterFeatureEffects(character, ruleset) {
   if (!character?.imported) return [];
@@ -33,7 +33,7 @@ export function characterFeatureEffects(character, ruleset) {
   }
   if (String(ruleset) === "2014" && (paladinLevel || hasNamed("divine smite"))) {
     features.push(damageFeature("divine-smite", "Divine Smite", "2d8",
-      "Base level-1 smite damage. Configure it when using a higher-level spell slot."), true);
+      "Base level-1 smite damage. Configure it when using a higher-level spell slot.", "die"));
   }
   if ((paladinLevel >= 11 && String(ruleset) === "2014") || hasNamed("improved divine smite")) {
     features.push(damageFeature("improved-divine-smite", "Improved Divine Smite", "1d8",

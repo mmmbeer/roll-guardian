@@ -7,6 +7,7 @@ export function openModal(title, body, footer = "", { onClose } = {}) {
   activeModal = { onClose, trigger: document.activeElement };
   $("#modalTitle").textContent = title;
   $("#modalBody").innerHTML = body;
+  $("#modalBody").querySelectorAll("form").forEach(form => { form.noValidate = true; });
   const actions = $("#modalFooter");
   actions.innerHTML = footer;
   if (![...actions.querySelectorAll("[data-close-modal]")].some(button => button.textContent.trim() === "Cancel")) {
