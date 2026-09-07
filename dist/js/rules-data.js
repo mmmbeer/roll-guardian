@@ -54,8 +54,8 @@ export const WEAPON_LIBRARY = [
   ["Heavy Crossbow", "dex", "1d10", "Piercing", "Ammunition, Heavy, Loading, Two-Handed"]
 ].map(([name, ability, damage, damageType, properties]) => ({ name, ability, damage, damageType, properties }));
 
-import { CORE_EFFECTS } from "./modifier-data-core.js?v=1.6.0";
-import { COMBAT_EFFECTS, FEATURE_EFFECTS, SUPPORT_EFFECTS } from "./modifier-data-options.js?v=1.6.0";
+import { CORE_EFFECTS } from "./modifier-data-core.js?v=1.7.0";
+import { COMBAT_EFFECTS, FEATURE_EFFECTS, SUPPORT_EFFECTS } from "./modifier-data-options.js?v=1.7.0";
 
 export const EFFECT_PRESETS = [...CORE_EFFECTS, ...SUPPORT_EFFECTS, ...COMBAT_EFFECTS, ...FEATURE_EFFECTS];
 

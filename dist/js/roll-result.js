@@ -1,4 +1,4 @@
-import { signed } from "./ui.js?v=1.6.0";
+import { signed } from "./ui.js?v=1.7.0";
 
 export function resultDetail(plan, outcome) {
   if (outcome.blocked) return "No roll: the target has total cover";

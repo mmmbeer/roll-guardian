@@ -1,7 +1,7 @@
 import { DiceBox } from "../vendor/dice-runtime.js";
-import { diceBoxNotation } from "./dice-notation.js?v=1.6.0";
-import { diceTheme, materialById } from "./dice-materials.js?v=1.6.0";
-import { createDiceParticleSystem } from "./dice-particles.js?v=1.6.0";
+import { diceBoxNotation } from "./dice-notation.js?v=1.7.0";
+import { diceTheme, materialById } from "./dice-materials.js?v=1.7.0";
+import { createDiceParticleSystem } from "./dice-particles.js?v=1.7.0";
 
 export function createDiceTray(container) {
   let running = false;

@@ -1,8 +1,8 @@
-import { bardDie, bardLevel, isAfterRoll, modifierUsage } from "./modifier-lifecycle.js?v=1.6.0";
-import { CHECKS, EFFECT_PRESETS } from "./rules-data.js?v=1.6.0";
-import { characterFeatureEffects } from "./character-features.js?v=1.6.0";
-import { selectedSpell, spellDamage } from "./spell-data.js?v=1.6.0";
-import { abilityModifier } from "./state.js?v=1.6.0";
+import { bardDie, bardLevel, isAfterRoll, modifierUsage } from "./modifier-lifecycle.js?v=1.7.0";
+import { CHECKS, EFFECT_PRESETS } from "./rules-data.js?v=1.7.0";
+import { characterFeatureEffects } from "./character-features.js?v=1.7.0";
+import { selectedSpell, spellDamage } from "./spell-data.js?v=1.7.0";
+import { abilityModifier } from "./state.js?v=1.7.0";
 
 const DIE_RE = /([+-]?)(\d*)d(\d+)|([+-]?\d+)/gi;
 
@@ -288,7 +288,14 @@ export function baseForContext(state) {
 
 function weaponBase(state, character, context) {
   const weapon = character.weapons.find(item => item.id === state.roll.selectedWeaponId) || character.weapons[0];
-  if (!weapon) return { label: "No weapon selected", sublabel: "Add a weapon", notation: context === "attack" ? "1d20" : "1d4", modifier: 0, isD20: context === "attack", rollScope: "weapon" };
+  if (!weapon) return {
+    label: context === "attack" ? "Attack roll" : "Damage roll",
+    sublabel: "Add bonuses from the modifiers bar", modifier: 0, rollScope: "weapon",
+    notation: context === "attack" ? "1d20" : state.roll.damageNotation || "1d6",
+    isD20: context === "attack", attackRoll: context === "attack", damageRoll: context === "damage",
+    attackType: state.roll.attackMode === "auto" ? undefined : state.roll.attackMode,
+    damageType: state.roll.damageType || "Untyped"
+  };
   const ability = abilityModifier(character.abilities[weapon.ability] ?? 10);
   const properties = String(weapon.properties || "").toLowerCase();
   const attackType = state.roll.attackMode === "ranged" && /thrown/.test(properties) || /ammunition|ranged/.test(properties) ? "ranged" : "melee";

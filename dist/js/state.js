@@ -1,4 +1,4 @@
-import { ABILITIES, SKILLS } from "./rules-data.js?v=1.6.0";
+import { ABILITIES, SKILLS } from "./rules-data.js?v=1.7.0";
 
 const STORAGE_KEY = "whatDoIRoll.v1";
 
@@ -52,9 +52,34 @@ export function createDefaultState() {
       critical: false,
       customNotation: "1d20",
       customLabel: "Custom roll",
+      damageNotation: "1d6",
+      damageType: "Untyped",
       selectedEffects: []
     },
     history: []
+  };
+}
+
+export function createBlankCharacter() {
+  return {
+    name: "Blank character", level: 1, imported: false, classes: [], featureNames: [],
+    proficiencyBonus: 0, spellAbility: "", spellAttackBonus: null, spellSaveDC: null,
+    maxSpellLevel: null,
+    abilities: Object.fromEntries(ABILITIES.map(ability => [ability.key, 10])),
+    saves: Object.fromEntries(ABILITIES.map(ability => [ability.key, 0])),
+    skills: Object.fromEntries(SKILLS.map(skill => [skill.key, 0])),
+    weapons: [], spells: [], items: []
+  };
+}
+
+export function replaceCharacter(state, character = createBlankCharacter()) {
+  state.character = { ...createBlankCharacter(), ...character };
+  state.activeEffects = [];
+  state.effectConfig = {};
+  state.roll = {
+    ...createDefaultState().roll,
+    selectedWeaponId: state.character.weapons[0]?.id || null,
+    selectedSpellId: state.character.spells[0]?.id || null
   };
 }
 

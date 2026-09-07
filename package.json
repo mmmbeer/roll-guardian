@@ -1,6 +1,6 @@
 {
   "name": "roll-guardian",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -16,6 +16,7 @@
     "three-nebula": "13.0.0"
   },
   "devDependencies": {
-    "esbuild": "0.25.9"
+    "esbuild": "0.25.9",
+    "jsdom": "^26.1.0"
   }
 }

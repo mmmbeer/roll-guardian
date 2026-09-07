@@ -3,7 +3,7 @@ import {
   RadialVelocity, Radius, RandomDrift, Rate, Rotate, Scale, Span,
   SphereZone, System, Texture, THREE, Vector3D
 } from "../vendor/dice-runtime.js";
-import { particleProfile } from "./dice-particle-profiles.js?v=1.6.0";
+import { particleProfile } from "./dice-particle-profiles.js?v=1.7.0";
 
 export function createDiceParticleSystem(box) {
   const reduced = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches;

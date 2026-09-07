@@ -196,6 +196,17 @@ kbd { padding: 2px 6px; border: 1px solid rgba(36,21,6,.3); border-radius: 4px; 
 .empty-state strong { display: block; margin-bottom: 6px; color: var(--text); }
 
 body.modal-open { overflow: hidden; }
+.modal-body.character-modal-body { display: flex; flex-direction: column; overflow: hidden; padding: 0; height: min(560px, 68dvh); }
+.character-tabs { flex: 0 0 auto; display: flex; gap: 4px; padding: 8px 12px; overflow-x: auto; border-bottom: 1px solid var(--line); }
+.character-tabs button { flex: 0 0 auto; min-height: 42px; padding: 0 12px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); cursor: pointer; }
+.character-tabs button[aria-selected="true"] { border-bottom-color: var(--accent); color: var(--accent-strong); }
+.character-tab-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 16px; }
+.character-tab-body [role="tabpanel"][hidden], #modalFooter button[hidden] { display: none; }
+.character-tab-body .panel { padding: 14px; margin-bottom: 12px; }
+.character-tab-body .ability-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.character-tab-body .panel-head { flex-wrap: wrap; }
+#blankCharacter { margin-right: auto; }
+.bottom-modifiers { position: sticky; left: 0; z-index: 2; flex-shrink: 0; background: var(--panel-2); border-color: var(--accent); box-shadow: 6px 0 10px var(--bg); }
 .modal-backdrop { position: fixed; inset: var(--modal-viewport-top,0px) 0 auto; height: var(--modal-viewport-height,100dvh); z-index: 100; display: flex; align-items: center; justify-content: center; padding: max(18px,env(safe-area-inset-top)) max(18px,env(safe-area-inset-right)) max(18px,var(--safe-bottom)) max(18px,env(safe-area-inset-left)); overflow: hidden; background: rgba(3,7,12,.72); backdrop-filter: blur(5px); }
 .modal-backdrop[hidden] { display: none; }
 .modal { display: flex; flex-direction: column; min-height: 0; width: min(650px,100%); max-height: 100%; overflow: hidden; border: 1px solid #3a4f64; border-radius: 15px; background: #111a25; box-shadow: var(--shadow); }

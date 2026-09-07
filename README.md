@@ -66,6 +66,10 @@ Third-party software notices are in [`docs/third-party-notices.md`](docs/third-p
 
 ## Character imports
 
+Open Character for tabs covering Import, Basics, Skills, Saves, Gear, Spells, and Backup. The tab strip and footer stay visible while the selected tab scrolls. Done commits your changes and Cancel restores the previous state, including edits made in gear and spell subdialogs.
+
+Start blank clears the character and all active or remembered roll modifiers. It starts with +0 ability modifiers, no proficiencies, no gear, and no spells. Basic attack, editable damage dice, skills, saves, and custom rolls work without importing a sheet. Use **＋ Modifiers** in the bottom options bar to add context-appropriate bonuses. Roll history, custom modifier definitions, and dice appearance are retained. Export a backup before clearing a character you want to keep.
+
 JSON exports provide the most complete import, including classes, recognizable class features, nested spell groups, and preparation state. Prepared and available character spells are marked and grouped above a level-appropriate SRD catalog. D&D Beyond PDF structure varies, so the PDF importer reads exposed form fields and applies conservative heuristics. Review imported weapons and ability scores before play.
 
 ## Open rules material

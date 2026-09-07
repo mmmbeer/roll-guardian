@@ -1,9 +1,9 @@
-import { buildRollPlan, executeRoll, rerollOutcome, addPostRollModifier } from "./roll-engine.js?v=1.6.0";
-import { usedLimitedEffects, removeEffects } from "./modifier-lifecycle.js?v=1.6.0";
-import { playDiceSound } from "./dice-3d.js?v=1.6.0";
-import { saveState, uid } from "./state.js?v=1.6.0";
-import { $, openModal, closeModal, escapeHtml, renderHistory, toast } from "./ui.js?v=1.6.0";
-import { resultDetail } from "./roll-result.js?v=1.6.0";
+import { buildRollPlan, executeRoll, rerollOutcome, addPostRollModifier } from "./roll-engine.js?v=1.7.0";
+import { usedLimitedEffects, removeEffects } from "./modifier-lifecycle.js?v=1.7.0";
+import { playDiceSound } from "./dice-3d.js?v=1.7.0";
+import { saveState, uid } from "./state.js?v=1.7.0";
+import { $, openModal, closeModal, escapeHtml, renderHistory, toast } from "./ui.js?v=1.7.0";
+import { resultDetail } from "./roll-result.js?v=1.7.0";
 
 export function createRollController({ getState, tray, renderAll, closeModifierPicker }) {
   let last = null;

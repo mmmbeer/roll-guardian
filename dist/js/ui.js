@@ -1,10 +1,10 @@
-import { bardDie, bardLevel } from "./modifier-lifecycle.js?v=1.6.0";
-export { openModal, closeModal, modalButtons } from "./modal.js?v=1.6.0";
-import { ABILITIES, CHECKS, DAMAGE_TYPES, SKILLS, WEAPON_LIBRARY } from "./rules-data.js?v=1.6.0";
-import { classSummary } from "./character-features.js?v=1.6.0";
-import { availableSpells, selectedSpell, spellDamage } from "./spell-data.js?v=1.6.0";
-import { abilityModifier } from "./state.js?v=1.6.0";
-import { effectCatalog, effectContextsForRoll, effectMatchesRollScope, entryMatchesRoll, getApplicableEffects } from "./roll-engine.js?v=1.6.0";
+import { bardDie, bardLevel } from "./modifier-lifecycle.js?v=1.7.0";
+export { openModal, closeModal, modalButtons } from "./modal.js?v=1.7.0";
+import { ABILITIES, CHECKS, DAMAGE_TYPES, SKILLS, WEAPON_LIBRARY } from "./rules-data.js?v=1.7.0";
+import { classSummary } from "./character-features.js?v=1.7.0";
+import { availableSpells, selectedSpell, spellDamage } from "./spell-data.js?v=1.7.0";
+import { abilityModifier } from "./state.js?v=1.7.0";
+import { effectCatalog, effectContextsForRoll, effectMatchesRollScope, entryMatchesRoll, getApplicableEffects } from "./roll-engine.js?v=1.7.0";
 
 export const $ = selector => document.querySelector(selector);
 export const $$ = selector => [...document.querySelectorAll(selector)];
@@ -72,6 +72,10 @@ export function renderAppliedModifiers(state) {
 }
 
 export function renderRollSubrail(state) {
+  return '<button class="option-chip bottom-modifiers" type="button" data-modifier-category="current">＋ Modifiers</button>' + renderRollOptions(state);
+}
+
+function renderRollOptions(state) {
   const family = rollFamily(state.roll.context);
   const c = state.character;
   if (family === "weapon") {
@@ -81,7 +85,7 @@ export function renderRollSubrail(state) {
     const contextual = state.roll.context === "attack"
       ? `<span class="subcontext-divider"></span>${targetButton(state)}`
       : `<span class="subcontext-divider"></span><label class="subcontext-field critical-chip"><input data-roll-field="critical" type="checkbox" ${state.roll.critical ? "checked" : ""}>Critical hit</label>${targetButton(state)}`;
-    return `<span class="subcontext-label">Roll</span><button class="option-chip ${state.roll.context === "attack" ? "is-active" : ""}" type="button" data-context="attack">Attack</button><button class="option-chip ${state.roll.context === "damage" ? "is-active" : ""}" type="button" data-context="damage">Damage</button><span class="subcontext-divider"></span><span class="subcontext-label">Weapon</span>${weaponOptions || '<span class="applied-empty">No weapons</span>'}<button class="option-chip" type="button" data-action="add-weapon" aria-label="Add weapon" title="Add weapon">＋ Add</button>${attackMode}${contextual}`;
+    return `<span class="subcontext-label">Roll</span><button class="option-chip ${state.roll.context === "attack" ? "is-active" : ""}" type="button" data-context="attack">Attack</button><button class="option-chip ${state.roll.context === "damage" ? "is-active" : ""}" type="button" data-context="damage">Damage</button><span class="subcontext-divider"></span><span class="subcontext-label">Weapon</span>${weaponOptions || genericRollOptions(state)}<button class="option-chip" type="button" data-action="add-weapon" aria-label="Add weapon" title="Add weapon">＋ Add</button>${attackMode}${contextual}`;
   }
   if (family === "spell") {
     const groups = availableSpells(state);
@@ -99,6 +103,11 @@ export function renderRollSubrail(state) {
   if (family === "skill") return `<span class="subcontext-label">Check</span>${CHECKS.map(check => `<button class="option-chip ${check.key === state.roll.selectedSkill ? "is-active" : ""}" type="button" data-select-skill="${check.key}">${escapeHtml(check.label)} ${signed(checkModifier(state, check))}</button>`).join("")}`;
   if (family === "save") return `<span class="subcontext-label">Saving throw</span>${ABILITIES.map(ability => `<button class="option-chip ${ability.key === state.roll.selectedSave ? "is-active" : ""}" type="button" data-select-save="${ability.key}">${ability.short} ${signed(saveModifier(state, ability.key))}</button>`).join("")}<button class="option-chip ${state.roll.selectedSave === "death" ? "is-active" : ""}" type="button" data-select-save="death">Death +0</button>`;
   return `<span class="subcontext-label">Custom</span><label class="subcontext-field wide">Name <input data-roll-field="customLabel" value="${escapeHtml(state.roll.customLabel)}" placeholder="Initiative"></label><label class="subcontext-field wide">Dice <input data-roll-field="customNotation" value="${escapeHtml(state.roll.customNotation)}" placeholder="2d6 + 3" autocapitalize="off" spellcheck="false"></label>`;
+}
+
+function genericRollOptions(state) {
+  if (state.roll.context === "attack") return `<span class="applied-empty">Basic d20</span><label class="subcontext-field">Type <select data-roll-field="attackMode" aria-label="Attack type">${[["auto", "Any"], ["melee", "Melee"], ["ranged", "Ranged"]].map(([value, label]) => `<option value="${value}" ${state.roll.attackMode === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>`;
+  return `<label class="subcontext-field wide">Dice <input data-roll-field="damageNotation" value="${escapeHtml(state.roll.damageNotation || "1d6")}" aria-label="Damage dice" spellcheck="false"></label><label class="subcontext-field">Type <select data-roll-field="damageType" aria-label="Damage type">${["Untyped", ...DAMAGE_TYPES].map(type => `<option ${type === (state.roll.damageType || "Untyped") ? "selected" : ""}>${type}</option>`).join("")}</select></label>`;
 }
 
 export function renderDiceLoadout(state, plan) {
@@ -144,7 +153,7 @@ export function renderModifierPopover(state, category, query = "") {
   let catalog = effectCatalog(state).filter(effect => effect.rulesets?.includes(state.ruleset) || effect.rulesets?.includes("all"));
   if (definition) catalog = catalog.filter(effect => definition.groups.includes(effect.group || "Custom"));
   if (needle) catalog = catalog.filter(effect => [effect.name, effect.group, effect.summary].some(value => String(value || "").toLowerCase().includes(needle)));
-  if (category === "target") catalog = catalog.filter(effect => effectMatchesRollScope(state, effect) && effect.entries.some(entry => entry.contexts.some(context => rollContexts.includes(context)) && entryMatchesRoll(state, entry)));
+  if (["target", "current"].includes(category)) catalog = catalog.filter(effect => effectMatchesRollScope(state, effect) && effect.entries.some(entry => entry.contexts.some(context => rollContexts.includes(context)) && entryMatchesRoll(state, entry)));
   if (!catalog.length) return '<div class="empty-inline">No matching modifiers.</div>';
   const active = new Set([...(state.activeEffects || []), ...(state.roll.selectedEffects || [])]);
   const grouped = groupBy(catalog);
@@ -185,39 +194,39 @@ export function renderRollModifiers(state) {
 export function renderCharacter(state) {
   const c = state.character;
   return `<div class="panel-stack">
-    <section class="panel">
+    <section class="panel" data-character-panel="basics">
       <div class="panel-head"><h2>Basics</h2><span class="field-note">Saved only on this device</span></div>
       ${c.imported && classSummary(c) ? `<div class="imported-character-note"><span>Imported character</span><strong>${escapeHtml(classSummary(c))}</strong></div>` : ""}<div class="field-grid">
         <label class="field span-2"><span class="field-label">Character name</span><input data-character="name" value="${escapeHtml(c.name)}"></label>
         <label class="field"><span class="field-label">Level</span><input data-character="level" type="number" min="1" max="20" value="${c.level}"></label>
-        <label class="field"><span class="field-label">Proficiency bonus</span><input data-character="proficiencyBonus" type="number" min="2" max="9" value="${c.proficiencyBonus}"></label>
-        <label class="field"><span class="field-label">Spellcasting ability</span><select data-character="spellAbility">${ABILITIES.map(a => `<option value="${a.key}" ${a.key === c.spellAbility ? "selected" : ""}>${a.label}</option>`).join("")}</select></label>
+        <label class="field"><span class="field-label">Proficiency bonus</span><input data-character="proficiencyBonus" type="number" min="0" max="9" value="${c.proficiencyBonus}"></label>
+        <label class="field"><span class="field-label">Spellcasting ability</span><select data-character="spellAbility"><option value="" ${!c.spellAbility ? "selected" : ""}>None selected</option>${ABILITIES.map(a => `<option value="${a.key}" ${a.key === c.spellAbility ? "selected" : ""}>${a.label}</option>`).join("")}</select></label>
         <label class="field"><span class="field-label">Spell attack override</span><input data-character="spellAttackBonus" type="number" value="${c.spellAttackBonus ?? ""}" placeholder="Calculated"></label>
       </div>
     </section>
-    <section class="panel">
+    <section class="panel" data-character-panel="basics">
       <div class="panel-head"><h2>Ability scores</h2><span class="field-note">Modifier shown below</span></div>
       <div class="ability-grid">${ABILITIES.map(a => `<div class="ability"><label for="ability-${a.key}">${a.short}</label><input id="ability-${a.key}" data-ability="${a.key}" type="number" min="1" max="30" value="${c.abilities[a.key]}"><output>${signed(abilityModifier(c.abilities[a.key]))}</output></div>`).join("")}</div>
     </section>
-    <section class="panel">
-      <div class="panel-head"><h2>Skills & saves</h2><span class="field-note">Tap rank to cycle none → proficient → expertise</span></div>
+    <section class="panel" data-character-panel="skills">
+      <div class="panel-head"><h2>Skills</h2><span class="field-note">Tap rank to cycle none → proficient → expertise</span></div>
       <div class="data-list">${SKILLS.map(skill => `<div class="data-row"><div><strong>${skill.label}</strong><small>${skill.ability.toUpperCase()}</small></div><span>${signed(checkModifier(state, skill))}</span><button class="mini-btn" type="button" data-skill-rank="${skill.key}">${rankLabel(c.skills[skill.key])}</button></div>`).join("")}</div>
-      <div class="section-title-row spaced-title"><h2>Saving throws</h2></div>
+      </section><section class="panel" data-character-panel="saves"><div class="panel-head"><h2>Saving throws</h2></div>
       <div class="data-list">${ABILITIES.map(a => `<div class="data-row"><div><strong>${a.label}</strong><small>Saving throw</small></div><span>${signed(saveModifier(state, a.key))}</span><button class="mini-btn" type="button" data-save-rank="${a.key}">${rankLabel(c.saves[a.key])}</button></div>`).join("")}</div>
     </section>
-    <section class="panel">
+    <section class="panel" data-character-panel="weapons">
       <div class="panel-head"><h2>Weapons</h2><button class="text-btn" type="button" data-action="add-weapon">+ Add weapon</button></div>
       <div class="data-list">${c.weapons.length ? c.weapons.map(weapon => `<div class="data-row"><div><strong>${escapeHtml(weapon.name)}</strong><small>${escapeHtml(weapon.damage)} ${escapeHtml(weapon.damageType)} · ${weapon.ability.toUpperCase()}</small></div><span class="row-meta">Attack ${signed(weaponAttack(state, weapon))}</span><div class="row-actions"><button class="mini-btn" type="button" data-edit-weapon="${weapon.id}" aria-label="Edit ${escapeHtml(weapon.name)}">Edit</button><button class="mini-btn danger" type="button" data-delete-weapon="${weapon.id}" aria-label="Delete ${escapeHtml(weapon.name)}">×</button></div></div>`).join("") : '<div class="empty-inline">No weapons yet.</div>'}</div>
     </section>
-    <section class="panel">
+    <section class="panel" data-character-panel="spells">
       <div class="panel-head"><h2>Spells</h2><button class="text-btn" type="button" data-action="add-spell">+ Add spell</button></div>
       <div class="data-list">${c.spells.length ? c.spells.map(spell => `<div class="data-row"><div><strong>${spell.imported ? '<span class="known-mark">★</span> ' : ""}${escapeHtml(spell.name)}</strong><small>${spell.imported ? "Imported spell" : labelRollType(spell.rollType)}${spell.damage ? ` · ${escapeHtml(spell.damage)}` : ""}</small></div><span class="row-meta">${spell.rollType === "attack" ? `Attack ${signed(spell.attackBonus ?? spellAttack(state))}` : spell.rollType === "save" ? `Save DC ${spell.saveDC || spellSaveDC(state)}` : escapeHtml(spell.damageType || "")}</span><div class="row-actions"><button class="mini-btn" type="button" data-edit-spell="${spell.id}">Edit</button><button class="mini-btn danger" type="button" data-delete-spell="${spell.id}">×</button></div></div>`).join("") : '<div class="empty-inline">No character spells or custom presets yet. The full SRD catalog is available on the Spellcasting rail.</div>'}</div>
     </section>
-    <section class="panel">
+    <section class="panel" data-character-panel="weapons">
       <div class="panel-head"><h2>Equipment</h2><button class="text-btn" type="button" data-action="add-item">+ Add item</button></div>
       <div class="data-list">${(c.items || []).length ? c.items.map((item, index) => `<div class="data-row"><div><strong>${escapeHtml(typeof item === "string" ? item : item.name)}</strong><small>Carried item</small></div><span></span><button class="mini-btn danger" type="button" data-delete-item="${index}">×</button></div>`).join("") : '<div class="empty-inline">Imported and manually added items appear here.</div>'}</div>
     </section>
-    <section class="panel">
+    <section class="panel" data-character-panel="backup">
       <div class="panel-head"><h2>Backup</h2></div>
       <div class="row-actions"><button class="mini-btn" type="button" data-action="export-backup">Export data</button><button class="mini-btn" type="button" data-action="import-backup">Import data</button><input id="backupInput" type="file" accept="application/json,.json" hidden></div>
     </section>
@@ -282,7 +291,7 @@ export function effectForm(effect = {}) {
 }
 
 export function importModal() {
-  return `<div class="form-stack"><label class="import-drop"><input id="characterFile" type="file" accept="application/pdf,application/json,.pdf,.json"><span><strong>Choose a D&D Beyond character file</strong><small>PDF character sheet or JSON export · nothing is uploaded</small></span></label><div id="importStatus" class="field-note">PDF import reads structured fields when the export exposes them. JSON gives the most complete result.</div></div>`;
+  return `<div class="form-stack"><label class="import-drop"><input id="characterFile" type="file" accept="application/pdf,application/json,.pdf,.json"><span><strong>Choose a D&D Beyond character file</strong><small>PDF character sheet or JSON export · nothing is uploaded</small></span></label><div id="importStatus" class="field-note" role="status" aria-live="polite">PDF import reads structured fields when the export exposes them. JSON gives the most complete result.</div></div>`;
 }
 
 export function helpContent(state) {

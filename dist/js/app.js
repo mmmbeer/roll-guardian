@@ -1,27 +1,28 @@
-import { createRollController } from "./roll-controller.js?v=1.6.0";
-import { createTutorial } from "./tutorial.js?v=1.6.0";
-import { bardLevel, bardDie } from "./modifier-lifecycle.js?v=1.6.0";
-import { createDiceTray } from "./dice-3d.js?v=1.6.0";
-import { createDiceAppearanceController } from "./dice-materials.js?v=1.6.0";
-import { importCharacterFile } from "./importer.js?v=1.6.0";
-import { buildRollPlan, effectCatalog } from "./roll-engine.js?v=1.6.0";
-import { DAMAGE_TYPES, SKILLS } from "./rules-data.js?v=1.6.0";
-import { createDefaultState, loadState, proficiencyForLevel, saveState, uid } from "./state.js?v=1.6.0";
-import { selectedSpell } from "./spell-data.js?v=1.6.0";
+import { createCharacterDialog } from "./character-dialog.js?v=1.7.0";
+import { createRollController } from "./roll-controller.js?v=1.7.0";
+import { createTutorial } from "./tutorial.js?v=1.7.0";
+import { bardLevel, bardDie } from "./modifier-lifecycle.js?v=1.7.0";
+import { createDiceTray } from "./dice-3d.js?v=1.7.0";
+import { createDiceAppearanceController } from "./dice-materials.js?v=1.7.0";
+import { buildRollPlan, effectCatalog } from "./roll-engine.js?v=1.7.0";
+import { DAMAGE_TYPES, SKILLS } from "./rules-data.js?v=1.7.0";
+import { createDefaultState, loadState, proficiencyForLevel, saveState, uid } from "./state.js?v=1.7.0";
+import { selectedSpell } from "./spell-data.js?v=1.7.0";
 import {
-  $, $$, closeModal, effectForm, escapeHtml, helpContent, importModal, modalButtons,
-  modifierCategoryLabel, openModal, renderAppliedModifiers, renderCharacter,
+  $, $$, closeModal, effectForm, escapeHtml, helpContent, modalButtons,
+  modifierCategoryLabel, openModal, renderAppliedModifiers,
   renderDiceLoadout, renderEffects, renderHistory, renderModifierPopover,
   renderRollSubrail, rollFamily, spellForm, toast, weaponForm, validateForm
-} from "./ui.js?v=1.6.0";
+} from "./ui.js?v=1.7.0";
 let state = loadState();
 let modalAction = null;
-let pendingImport = null;
 let modifierPicker = null;
 const tray = createDiceTray($("#diceCanvas"));
 createDiceAppearanceController({ getState: () => state, tray, save: () => saveState(state), openModal, toast });
 const rolls = createRollController({ getState: () => state, tray, renderAll, closeModifierPicker });
 const tutorial = createTutorial({ getState: () => state, renderAll, closeModifierPicker });
+const characterDialog = createCharacterDialog({ getState: () => state, renderAll, resetPlatform, clearAction: () => { modalAction = null; } });
+if (state.view === "character") state.view = "roll";
 renderAll();
 bindEvents();
 tutorial.startIfNew();
@@ -29,13 +30,13 @@ function renderAll() {
   $("#rulesetSelect").value = state.ruleset;
   renderNavigation();
   renderRoll();
-  $("#characterEditor").innerHTML = renderCharacter(state);
+  characterDialog.refresh();
   $("#effectsEditor").innerHTML = renderEffects(state);
   $("#historyList").innerHTML = renderHistory(state);
   $("#rulesetNotice").textContent = `${state.ruleset} presets are shown. Rules that change eligibility rather than arithmetic are left for you to confirm.`;
   $("#characterSummary").textContent = `${state.character.name} · Level ${state.character.level}`;
   refreshModifierPicker();
-  saveState(state);
+  saveState(characterDialog.savedState());
 }
 function renderNavigation() {
   document.body.dataset.view = state.view;
@@ -92,6 +93,7 @@ function handleClick(event) {
   if (event.target.closest('[data-action="start-tutorial"]')) { closeModal(); tutorial.start(); return; }
   if (modifierPicker && !event.target.closest("#modifierPopover") && !event.target.closest("[data-modifier-category]") && !event.target.closest("#modifierSearch")) closeModifierPicker();
   const view = event.target.closest("[data-view-link]");
+  if (view?.dataset.viewLink === "character") { closeModifierPicker(); characterDialog.open(); return; }
   if (view) { state.view = view.dataset.viewLink; closeModifierPicker(); renderAll(); return; }
   const modifierCategory = event.target.closest("[data-modifier-category]");
   if (modifierCategory) { openModifierPicker(modifierCategory.dataset.modifierCategory); return; }
@@ -124,7 +126,7 @@ function handleClick(event) {
   if (rerollDieButton) { rolls.performReroll(Number(rerollDieButton.dataset.rerollIndex), rerollDieButton.dataset.rerollEffect); return; }
   if (event.target.closest("#resetRoll")) { resetRoll(); return; }
   if (event.target.closest("#helpButton")) { openModal("How to use this", helpContent(state), '<button class="modal-button primary" type="button" data-close-modal>Done</button>'); return; }
-  if (event.target.closest("#openImport")) { openImportDialog(); return; }
+  if (event.target.closest("#openImport")) { characterDialog.open("import"); return; }
   if (event.target.closest("#addEffect") || event.target.closest('[data-action="add-custom-effect"]')) { closeModifierPicker(); openEffectEditor(); return; }
   if (event.target.closest("#soundToggle")) { state.sound = !state.sound; $("#soundToggle").setAttribute("aria-pressed", String(state.sound)); toast(state.sound ? "Dice sound on" : "Dice sound off"); saveState(state); return; }
   if (event.target.closest("#clearHistory")) { confirmClearHistory(); return; }
@@ -188,7 +190,6 @@ function handleChange(event) {
     state.character.abilities[target.dataset.ability] = Number(target.value || 10); renderAll(); return;
   }
   if (target.id === "weaponLibrary" && target.value !== "") { fillWeaponForm(Number(target.value)); return; }
-  if (target.id === "characterFile") { parseCharacterImport(target.files?.[0]); return; }
   if (target.id === "backupInput") { importBackup(target.files?.[0]); }
 }
 
@@ -199,7 +200,7 @@ function handleInput(event) {
     refreshModifierPicker();
     return;
   }
-  if (target.matches("[data-roll-field]") && ["targetName", "targetAC", "customLabel", "customNotation"].includes(target.dataset.rollField)) {
+  if (target.matches("[data-roll-field]") && ["targetName", "targetAC", "customLabel", "customNotation", "damageNotation"].includes(target.dataset.rollField)) {
     state.roll[target.dataset.rollField] = target.value;
     resetPlatform(); updateRollSummary(); saveState(state);
   }
@@ -255,7 +256,7 @@ function openModifierPicker(category, query = "") {
 function refreshModifierPicker() {
   const popover = $("#modifierPopover");
   if (!modifierPicker) { popover.hidden = true; return; }
-  popover.classList.toggle("target-drawer", modifierPicker.category === "target");
+  popover.classList.toggle("target-drawer", ["target", "current"].includes(modifierPicker.category));
   popover.hidden = false;
   $("#popoverEyebrow").textContent = `${title(state.roll.context)} roll`;
   $("#popoverTitle").textContent = modifierCategoryLabel(modifierPicker.category, modifierPicker.query);
@@ -272,7 +273,7 @@ function closeModifierPicker() {
 }
 
 function openWeaponEditor(weapon = null) {
-  openModal(weapon ? "Edit weapon" : "Add weapon", weaponForm(weapon), modalButtons(weapon ? "Save changes" : "Add weapon"));
+  openModal(weapon ? "Edit weapon" : "Add weapon", weaponForm(weapon), modalButtons(weapon ? "Save changes" : "Add weapon"), characterDialog.childOptions());
   modalAction = () => {
     const form = $("#weaponForm"); if (!validateForm(form)) return;
     const data = Object.fromEntries(new FormData(form));
@@ -283,7 +284,7 @@ function openWeaponEditor(weapon = null) {
 }
 
 function openSpellEditor(spell = null) {
-  openModal(spell ? "Edit spell preset" : "Add spell preset", spellForm(spell), modalButtons(spell ? "Save changes" : "Add spell"));
+  openModal(spell ? "Edit spell preset" : "Add spell preset", spellForm(spell), modalButtons(spell ? "Save changes" : "Add spell"), characterDialog.childOptions());
   modalAction = () => {
     const form = $("#spellForm"); if (!validateForm(form)) return;
     const data = Object.fromEntries(new FormData(form));
@@ -294,7 +295,7 @@ function openSpellEditor(spell = null) {
 }
 
 function openItemEditor() {
-  openModal("Add equipment", '<form class="form-stack" id="itemForm"><label class="field"><span class="field-label">Item name</span><input name="name" required placeholder="Potion of healing, thieves’ tools…"></label><p class="field-note">If this item changes a roll, add its bonus under Effects so it can be switched on when relevant.</p></form>', modalButtons("Add item"));
+  openModal("Add equipment", '<form class="form-stack" id="itemForm"><label class="field"><span class="field-label">Item name</span><input name="name" required placeholder="Potion of healing, thieves’ tools…"></label><p class="field-note">If this item changes a roll, add its bonus under Effects so it can be switched on when relevant.</p></form>', modalButtons("Add item"), characterDialog.childOptions());
   modalAction = () => {
     const form = $("#itemForm"); if (!validateForm(form)) return;
     state.character.items ||= []; state.character.items.push(new FormData(form).get("name").trim());
@@ -361,34 +362,8 @@ function openEffectConfiguration(id) {
   };
 }
 
-function openImportDialog() {
-  pendingImport = null;
-  openModal("Import character", importModal(), '<button class="modal-button" type="button" data-close-modal>Cancel</button><button class="modal-button primary" id="applyImport" type="button" data-modal-save disabled>Apply import</button>');
-  modalAction = () => {
-    if (!pendingImport) return;
-    state.character = { ...state.character, ...pendingImport.character };
-    state.roll.selectedWeaponId = state.character.weapons[0]?.id || null;
-    state.roll.selectedSpellId = state.character.spells[0]?.id || null;
-    resetSpellChoices();
-    closeModal(); renderAll(); toast(`${state.character.name} imported`);
-  };
-}
-
-async function parseCharacterImport(file) {
-  if (!file) return;
-  const status = $("#importStatus");
-  status.textContent = "Reading character file…";
-  try {
-    pendingImport = await importCharacterFile(file);
-    status.innerHTML = `<div class="import-summary"><strong>${escapeHtml(pendingImport.character.name)}</strong><br>${escapeHtml(pendingImport.summary)}</div>${pendingImport.warnings.map(w => `<p>${escapeHtml(w)}</p>`).join("")}`;
-    $("#applyImport").disabled = false;
-  } catch (error) {
-    pendingImport = null; status.textContent = error.message || "The character file could not be read.";
-  }
-}
-
 function fillWeaponForm(index) {
-  import("./rules-data.js?v=1.6.0").then(({ WEAPON_LIBRARY }) => {
+  import("./rules-data.js?v=1.7.0").then(({ WEAPON_LIBRARY }) => {
     const weapon = WEAPON_LIBRARY[index]; const form = $("#weaponForm"); if (!weapon || !form) return;
     ["name","ability","damage","damageType","properties"].forEach(key => { form.elements[key].value = weapon[key]; });
   });
